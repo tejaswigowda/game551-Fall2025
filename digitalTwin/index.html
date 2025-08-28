@@ -21,10 +21,16 @@
 
         camera.position.z = 5;
 
+
+        // make bg white
+        // renderer.setClearColor(0xffffff, 1);
+
         // load sample.glb
         const loader = new GLTFLoader();
         loader.load('./sample.glb', (gltf) => {
             scene.add(gltf.scene);
+            // scale
+            gltf.scene.scale.set(5, 5, 5);
         });
 
 
