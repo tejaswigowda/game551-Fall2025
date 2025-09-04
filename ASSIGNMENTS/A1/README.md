@@ -23,6 +23,8 @@ Next add your scanned glb object (from last class) to this webXR ready project: 
 
 Please create a `/docs` folder and host your submission on Github pages: https://docs.github.com/en/pages
 
+<img src="pages.png">
+
 ## Submision
 
 - code on your gihub repo.
