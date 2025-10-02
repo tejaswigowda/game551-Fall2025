@@ -12,5 +12,3 @@ See <https://github.com/tejaswigowda/game551-Fall2025/tree/main/basicServers/sta
 - code on your gihub repo.
 - screenshot of the website (on desktop browser)
 - VR demo on Oculus headset.
-
-
