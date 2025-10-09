@@ -1,13 +1,15 @@
-# Assignment 4
+# Assignment 3
 
-## Due Oct 15th in class. 
+## Due Oct 8th in class. 
 
 ## Tasks
 
-Complete project proposal by starting with this template <https://docs.google.com/presentation/d/12I59DRFtEYDYX-KjFFxlUmHABvgPBdqd/edit?usp=sharing&ouid=106332283595380118179&rtpof=true&sd=true>. 
+Start with the last assignment deliverable and serve it over HTTPS from an EC2 server.
+See <https://github.com/tejaswigowda/game551-Fall2025/tree/main/basicServers/staticHosting> to run a static HTTPS server using Node.js/LetsEncrypt<https://letsencrypt.org/>.
 
 
 ## Submision
 
-- Slides (as pdf) on github.
-- Presentation in class.
+- code on your gihub repo.
+- VR demo on HTTPS site on Oculus headset.
+
