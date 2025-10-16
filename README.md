@@ -8,3 +8,8 @@ Slides: https://docs.google.com/presentation/d/1fqoHvb76n3efM5ZT3SmW6NNtjddM88fg
 ------
 
 Install node/mongo on EC2: https://gist.github.com/tejaswigowda/ca8768ebf8c423831e9e419bc46ed22b
+
+SSH to my EC2 instance: 
+```
+ ssh -i ~/.ssh/[my-key].pem ubuntu@[my-ip-address]
+```
