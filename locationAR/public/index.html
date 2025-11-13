@@ -31,6 +31,8 @@
 <script>
   var pos = { x: 0, y: 0, z: 0 };
   var quat = { x: 0, y: 0, z: 0, w: 1 };
+  var userPins = [];
+
 var main = function(){
   // check whether user is logged in
   loadFile("/loginStatus", function(data){
@@ -350,6 +352,17 @@ var doLogout = function()
     setInterval(function () {
       $.get("./getPositions", function (positions) {
         console.log(positions);
+        for(var i=0; i<positions.length; i++){
+          var p = positions[i];
+          if(!userPins.includes(p._id)){
+            userPins.push(p._id);
+            var geom = new THREE.SphereGeometry(5, 16, 16);
+            var mat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            var sphere = new THREE.Mesh(geom, mat);
+            sphere.position.set(p.x*20, p.y*20, p.z*20);
+            scene.add(sphere);
+          }
+        }
       });
     }, 1000);
   </script>
