@@ -360,7 +360,7 @@ var doLogout = function()
             var pinGeometry = new THREE.ConeGeometry(5, 20, 32);
             var pinMaterial = new THREE.MeshBasicMaterial({ color: Math.random() * 0xffffff });
             var pin = new THREE.Mesh(pinGeometry, pinMaterial);
-            pin.position.set(p.x * 200, p.y * 200, p.z * 200);
+            pin.position.set(p.x * 20, p.y * 20, p.z * 20);
             pin.rotation.x = Math.PI; // point downwards
             scene.add(pin);
             userPins[p.userid] = pin;
@@ -368,7 +368,7 @@ var doLogout = function()
           else{
             // update existing pin
             var pin = userPins[p.userid];
-            pin.position.set(p.x * 200, p.y * 200, p.z * 200);
+            pin.position.set(p.x * 20, p.y * 20, p.z * 20);
           }
         }
       });
