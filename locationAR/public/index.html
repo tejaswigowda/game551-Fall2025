@@ -360,7 +360,7 @@ var doLogout = function()
             var geometry = new THREE.SphereGeometry(5, 32, 32);
             var material = new THREE.MeshBasicMaterial({ color: Math.random() * 0xffffff });
             var mesh = new THREE.Mesh(geometry, material);  
-            mesh.position.set(p.x * 20, p.y * 20, p.z * 20);
+            mesh.position.set(p.x * 200, p.y * 200, p.z * 200);
             mesh.quaternion.set(p.qx, p.qy, p.qz, p.qw);
             scene.add(mesh);
             userPins[p.userid] = mesh;
@@ -368,7 +368,7 @@ var doLogout = function()
           else{
             // update position
             var mesh = userPins[p.userid];
-            mesh.position.set(p.x * 20, p.y * 20, p.z * 20);
+            mesh.position.set(p.x * 200, p.y * 200, p.z * 200);
             mesh.quaternion.set(p.qx, p.qy, p.qz, p.qw);
           }
         }
