@@ -16,9 +16,9 @@
 
 		var main = function(){
   // check whether user is logged in
-  loadFile("/loginStatus", function(data){
+  loadFile("../loginStatus", function(data){
     if(data === "0"){
-      window.location.href='./login.html'
+      window.location.href='../login.html'
       return;
     }
     else{
@@ -31,7 +31,7 @@ var doLogout = function()
 {
   var x = confirm("Logout now?")
   if(x){
-    loadFile("./logout", function(d){window.location.reload()})
+    loadFile("../logout", function(d){window.location.reload()})
   }
 }
 		var pos = { x: 0, y: 0, z: 0 };
