@@ -29,6 +29,8 @@
   <title>WebXR SLAM</title>
    <script src='asyncReq.js'></script>
 <script>
+  var pos = { x: 0, y: 0, z: 0 };
+  var quat = { x: 0, y: 0, z: 0, w: 1 };
 var main = function(){
   // check whether user is logged in
   loadFile("/loginStatus", function(data){
@@ -37,7 +39,7 @@ var main = function(){
       return;
     }
     else{
-      document.getElementById("accountInfo").innerHTML = data;
+     // document.getElementById("accountInfo").innerHTML = data;
     }
   });               
 }
@@ -298,6 +300,8 @@ var doLogout = function()
     var pos = new THREE.Vector3(0, 0, 0);
 
     function updatePose(p, q) {
+      pos = { x: p.x, y: p.y, z: p.z };
+      quat = { x: q.x, y: q.y, z: q.z, w: q.w };
       document.getElementById('pose').innerHTML = "Position: <br>" +
         p.x.toFixed(3) + ", " + p.y.toFixed(3) + ", " + p.z.toFixed(3) + "<br> " +
         "Orientation: <br>" + q.x.toFixed(3) + ", " + q.y.toFixed(3) + ", " + q.z.toFixed(3) + ", " + q.w.toFixed(3);
@@ -333,6 +337,14 @@ var doLogout = function()
         sendData = true;
       }
     });
+
+    setInterval(function () {
+     // if (sendData) {
+        $.get("./setPosition", { x: pos.x.toFixed(5), y: pos.y.toFixed(5), z: pos.z.toFixed(5), qx: quat.x.toFixed(5), qy: quat.y.toFixed(5), qz: quat.z.toFixed(5), qw: quat.w.toFixed(5) }, function (data) {
+          //console.log(data);
+        });
+      //}
+    }, 1000);
   </script>
 </body>
 
