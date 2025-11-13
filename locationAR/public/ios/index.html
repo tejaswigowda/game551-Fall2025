@@ -4,11 +4,25 @@
 	<title>Simple AR example</title>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-			<script src="../three.min.js"></script>
+	<script src="../three.min.js"></script>
+	  <script src='../jquery-3.5.1.min.js'></script>
+
 	<!--
 	<script src="https://cdn.jsdelivr.net/gh/tejaswigowda/webxr-slam-ios@latest/docs/libs/three/three.min.js"></script>
 							-->
 
+	<script>
+		var pos = { x: 0, y: 0, z: 0 };
+		var quat = { x: 0, y: 0, z: 0, w: 1 };
+
+    setInterval(function () {
+     // if (sendData) {
+        $.get("./setPosition", { x: pos.x.toFixed(5), y: pos.y.toFixed(5), z: pos.z.toFixed(5), qx: quat.x.toFixed(5), qy: quat.y.toFixed(5), qz: quat.z.toFixed(5), qw: quat.w.toFixed(5) }, function (data) {
+          //console.log(data);
+        });
+      //}
+    }, 1000);
+	</script>
 
 </head>
 
@@ -18,142 +32,151 @@
 	</div>
 	<button type=button id=go-button>Go</button>
 	<script type=module>
-			// some dependencies and utilities
-			//import * as mat4 from './libs/gl-matrix/mat4.js';
-			//import * as vec3 from './libs/gl-matrix/vec3.js';
+		// some dependencies and utilities
+		//import * as mat4 from './libs/gl-matrix/mat4.js';
+		//import * as vec3 from './libs/gl-matrix/vec3.js';
 
-			import XREngine from './XREngine.js';
+		import XREngine from './XREngine.js';
 
-			let session = null;
-			let localReferenceSpace = null;
-			let viewerReferenceSpace = null;
-			let engine = null;
-			
-			// temporary working variables
-			//const workingMatrix = mat4.create();
-			//const workingVec3 = vec3.create();
+		let session = null;
+		let localReferenceSpace = null;
+		let viewerReferenceSpace = null;
+		let engine = null;
 
-			const goButton = document.getElementById('go-button');
+		// temporary working variables
+		//const workingMatrix = mat4.create();
+		//const workingVec3 = vec3.create();
 
-			const initXR = () => {
-				if (navigator.xr) {
-					navigator.xr.isSessionSupported('immersive-ar',{
-          optionalFeatures: ['dom-overlay'],
-          domOverlay: { root: document.getElementById('overlay') }
-        }).then(supported => {
-						if (supported) {
-							goButton.disabled = false;
-							goButton.addEventListener('click', onButtonClick);
-						} else {
-							goButton.initText = 'No WebXR AR support';
-						}
+		const goButton = document.getElementById('go-button');
+
+		const initXR = () => {
+			if (navigator.xr) {
+				navigator.xr.isSessionSupported('immersive-ar', {
+					optionalFeatures: ['dom-overlay'],
+					domOverlay: { root: document.getElementById('overlay') }
+				}).then(supported => {
+					if (supported) {
+						goButton.disabled = false;
+						goButton.addEventListener('click', onButtonClick);
+					} else {
+						goButton.initText = 'No WebXR AR support';
+					}
+				});
+			} else {
+				goButton.initText = 'No WebXR support';
+			}
+		};
+
+		const onButtonClick = event => {
+			if (!session) {
+				navigator.xr.requestSession('immersive-ar', {
+					optionalFeatures: ['dom-overlay'],
+					domOverlay: { root: document.getElementById('overlay') }
+				})
+					.then(xrSession => {
+						initSession(xrSession);
+						goButton.innerText = 'End';
+						document.getElementById('overlay').style.display = 'block';
+					}).catch(err => {
+						console.error('Session setup error', err);
 					});
-				} else {
-					goButton.initText = 'No WebXR support';
-				}
-			};
+			} else {
+				session.end();
+			}
+		};
 
-			const onButtonClick = event => {
-				if (!session) {
-					navigator.xr.requestSession('immersive-ar', {
-          optionalFeatures: ['dom-overlay'],
-          domOverlay: { root: document.getElementById('overlay') }
-        })
-						.then(xrSession => {
-							initSession(xrSession);
-							goButton.innerText = 'End';
-							document.getElementById('overlay').style.display = 'block';
-						}).catch(err => {
-							console.error('Session setup error', err);
-						});
-				} else {
-					session.end();
-				}
-			};
+		const initSession = async xrSession => {
+			session = xrSession;
+			session.addEventListener('end', onSessionEnd);
 
-			const initSession = async xrSession => {
-				session = xrSession;
-				session.addEventListener('end', onSessionEnd);
+			localReferenceSpace = await session.requestReferenceSpace('local');
+			viewerReferenceSpace = await session.requestReferenceSpace('viewer');
 
-				localReferenceSpace = await session.requestReferenceSpace('local');
-				viewerReferenceSpace = await session.requestReferenceSpace('viewer');
+			// Create the context where we will render our 3D scene
+			const canvas = document.createElement('canvas');
+			const context = canvas.getContext('webgl', {
+				xrCompatible: true
+			});
 
-				// Create the context where we will render our 3D scene
-				const canvas = document.createElement('canvas');
-				const context = canvas.getContext('webgl', {
-					xrCompatible: true
-				});
+			if (!context) throw new Error('Could not create a webgl context');
 
-				if (!context) throw new Error('Could not create a webgl context');
+			// Set up the base layer
+			session.updateRenderState({ baseLayer: new XRWebGLLayer(session, context) });
 
-				// Set up the base layer
-				session.updateRenderState({baseLayer: new XRWebGLLayer(session, context)});
+			// Create a simple test scene and renderer
+			// The engine's scene is in the eye-level coordinate system 
+			engine = new XREngine(canvas, context);
 
-				// Create a simple test scene and renderer
-				// The engine's scene is in the eye-level coordinate system 
-				engine = new XREngine(canvas, context);
-
-				// get the location of the device, and use it to create an
-				// anchor with the identity orientation
-				session.requestAnimationFrame(async (t, frame) => {
-					/*
-					mat4.copy(workingMatrix, frame.getPose(localReferenceSpace, viewerReferenceSpace).transform.matrix);
-					mat4.getTranslation(workingVec3, workingMatrix);
-					mat4.fromTranslation(workingMatrix, workingVec3);
-
-					const anchor = await frame.addAnchor(workingMatrix, localReferenceSpace);
-					engine.addAnchoredNode(anchor, engine.root);
-					*/
-
-					// Kick off rendering
-					session.requestAnimationFrame(handleAnimationFrame);
-				});
-
-			};
-
-			const onSessionEnd = event => {
-				session = null;
-				viewerReferenceSpace = null;
-				localReferenceSpace = null;
-				goButton.innerText = 'Go';
-			};
-
-			// render loop			
-			const handleAnimationFrame = (t, frame) => {
-				if(!session || session.ended) return;
-
-				session.requestAnimationFrame(handleAnimationFrame);
-				const pose = frame.getViewerPose(localReferenceSpace);
-				if (!pose) {
-					console.log('No pose');
-					return;
-				}
-
-				const position = pose.transform.position;
-				document.getElementById('data').innerHTML = `Position: ${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}` + "<br>" +
-					`Orientation: ${pose.transform.orientation.x.toFixed(2)}, ${pose.transform.orientation.y.toFixed(2)}, ${pose.transform.orientation.z.toFixed(2)}, ${pose.transform.orientation.w.toFixed(2)}` + "<br>" 
-
-				engine.startFrame();
+			// get the location of the device, and use it to create an
+			// anchor with the identity orientation
+			session.requestAnimationFrame(async (t, frame) => {
 				/*
-				for (const view of pose.views) {
-					engine.preRender(
-						session.renderState.baseLayer.getViewport(view),
-						view.projectionMatrix,
-						view.transform.matrix
-					);
-					engine.render();
-				}
+				mat4.copy(workingMatrix, frame.getPose(localReferenceSpace, viewerReferenceSpace).transform.matrix);
+				mat4.getTranslation(workingVec3, workingMatrix);
+				mat4.fromTranslation(workingMatrix, workingVec3);
+
+				const anchor = await frame.addAnchor(workingMatrix, localReferenceSpace);
+				engine.addAnchoredNode(anchor, engine.root);
 				*/
-				engine.endFrame();
-				if (wsconnect) {
-					ws.send(JSON.stringify({
-						position: position
-					}));
-				}
+
+				// Kick off rendering
+				session.requestAnimationFrame(handleAnimationFrame);
+			});
+
+		};
+
+		const onSessionEnd = event => {
+			session = null;
+			viewerReferenceSpace = null;
+			localReferenceSpace = null;
+			goButton.innerText = 'Go';
+		};
+
+		// render loop			
+		const handleAnimationFrame = (t, frame) => {
+			if (!session || session.ended) return;
+
+			session.requestAnimationFrame(handleAnimationFrame);
+			const pose = frame.getViewerPose(localReferenceSpace);
+			if (!pose) {
+				console.log('No pose');
+				return;
 			}
 
-			initXR();
-		</script>
+			pos = { x: pose.transform.position.x,
+				y: pose.transform.position.y,
+				z: pose.transform.position.z
+			};
+			quat = { x: pose.transform.orientation.x,
+				y: pose.transform.orientation.y,
+				z: pose.transform.orientation.z,
+				w: pose.transform.orientation.w
+			};
+			const position = pose.transform.position;
+			document.getElementById('data').innerHTML = `Position: ${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}` + "<br>" +
+				`Orientation: ${pose.transform.orientation.x.toFixed(2)}, ${pose.transform.orientation.y.toFixed(2)}, ${pose.transform.orientation.z.toFixed(2)}, ${pose.transform.orientation.w.toFixed(2)}` + "<br>"
+
+			engine.startFrame();
+			/*
+			for (const view of pose.views) {
+				engine.preRender(
+					session.renderState.baseLayer.getViewport(view),
+					view.projectionMatrix,
+					view.transform.matrix
+				);
+				engine.render();
+			}
+			*/
+			engine.endFrame();
+			if (wsconnect) {
+				ws.send(JSON.stringify({
+					position: position
+				}));
+			}
+		}
+
+		initXR();
+	</script>
 </body>
 <div id="overlay"
 	style="display:none;position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0,0,0,0.3); z-index: 999999999;">
