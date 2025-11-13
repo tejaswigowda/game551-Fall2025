@@ -345,6 +345,13 @@ var doLogout = function()
         });
       //}
     }, 1000);
+
+
+    setInterval(function () {
+      $.get("./getPositions", function (positions) {
+        console.log(positions);
+      });
+    }, 1000);
   </script>
 </body>
 
