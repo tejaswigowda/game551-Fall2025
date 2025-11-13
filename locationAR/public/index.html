@@ -360,7 +360,7 @@ var doLogout = function()
             var pinGeometry = new THREE.BoxGeometry(10, 10, 10);
             var pinMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
             var pinCube = new THREE.Mesh(pinGeometry, pinMaterial);
-            pinCube.position.set(p.x * 20, p.y * 20, p.z * 20);
+            pinCube.position.set(p.x * 200, p.y * 200, p.z * 200);
             scene.add(pinCube);
           }
         }
