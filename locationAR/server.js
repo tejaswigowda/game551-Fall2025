@@ -2,7 +2,8 @@ var url = require("url"),
 	querystring = require("querystring");
 var passport = require('passport');
 var fs = require('fs');
-	var dbURL = 'mongodb://44.246.204.171:27017/test';
+//	var dbURL = 'mongodb://44.246.204.171:27017/test';
+	var dbURL = 'mongodb://127.0.0.1:27017/test';
 var path = require('path'),
   express = require('express'),
   db = require('mongoskin').db(dbURL, {native_parser:true});
@@ -38,7 +39,7 @@ require('./passport/config/passport')(passport); // pass passport for configurat
 require('./passport/routes.js')(app, passport); // load our routes and pass in our app and fully configured passport
 
 
-app.get("/setPosition", /*isLoggedIn,*/ function(req,res){
+app.get("/setPosition", isLoggedIn, function(req,res){
   var user = "guest";
   if(req.user && req.user.local && req.user.local.email) user = req.user.local.email;
   var arg = req.query;
@@ -50,23 +51,24 @@ app.get("/setPosition", /*isLoggedIn,*/ function(req,res){
       // update
       db.collection("positions").updateOne({userid:user}, {$set:arg}, function(err, result){
         if(err) console.log(err);
-       // console.log("position updated for user "+user);
-          res.end("ok");
+        res.end("ok");
       });
     }
     else{
       // insert
       db.collection("positions").insertOne(arg, function(err, result){
         if(err) console.log(err);
-       // console.log("position inserted for user "+user);
-          res.end("ok");
+        res.end("ok");
       });
     }
   });
 })
 
-app.get("/getProjects", function(req,res){
-
+app.get("/getPositions", function(req,res){
+  db.collection("positions").find().toArray(function(err, items){
+    if(err) console.log(err);
+    res.json(items);
+  });
 })
 
 app.use(express.static(path.join(__dirname, 'public')));
