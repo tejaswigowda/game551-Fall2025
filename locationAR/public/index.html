@@ -31,7 +31,7 @@
 <script>
   var pos = { x: 0, y: 0, z: 0 };
   var quat = { x: 0, y: 0, z: 0, w: 1 };
-  var userPins = [];
+  var userPins = {};
 
 var main = function(){
   // check whether user is logged in
@@ -354,14 +354,21 @@ var doLogout = function()
         console.log(positions);
         for(var i=0; i<positions.length; i++){
           var p = positions[i];
-          if(!userPins.includes(p._id)){
-            userPins.push(p._id);
-            // add cube with name
-            var pinGeometry = new THREE.BoxGeometry(10, 10, 10);
-            var pinMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-            var pinCube = new THREE.Mesh(pinGeometry, pinMaterial);
-            pinCube.position.set(p.x * 200, p.y * 200, p.z * 200);
-            scene.add(pinCube);
+          var keys = Object.keys(userPins);
+          if(!keys.includes(p.userid)){
+            // create new pin
+            var pinGeometry = new THREE.ConeGeometry(5, 20, 32);
+            var pinMaterial = new THREE.MeshBasicMaterial({ color: Math.random() * 0xffffff });
+            var pin = new THREE.Mesh(pinGeometry, pinMaterial);
+            pin.position.set(p.x * 20, p.y * 20, p.z * 20);
+            pin.rotation.x = Math.PI; // point downwards
+            scene.add(pin);
+            userPins[p.userid] = pin;
+          }
+          else{
+            // update existing pin
+            var pin = userPins[p.userid];
+            pin.position.set(p.x * 20, p.y * 20, p.z * 20);
           }
         }
       });
