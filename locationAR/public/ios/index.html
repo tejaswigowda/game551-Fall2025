@@ -6,12 +6,34 @@
 	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 	<script src="../three.min.js"></script>
 	  <script src='../jquery-3.5.1.min.js'></script>
+   <script src='../asyncReq.js'></script>
 
 	<!--
 	<script src="https://cdn.jsdelivr.net/gh/tejaswigowda/webxr-slam-ios@latest/docs/libs/three/three.min.js"></script>
 							-->
 
 	<script>
+
+		var main = function(){
+  // check whether user is logged in
+  loadFile("/loginStatus", function(data){
+    if(data === "0"){
+      window.location.href='./login.html'
+      return;
+    }
+    else{
+     // document.getElementById("accountInfo").innerHTML = data;
+    }
+  });               
+}
+
+var doLogout = function()
+{
+  var x = confirm("Logout now?")
+  if(x){
+    loadFile("./logout", function(d){window.location.reload()})
+  }
+}
 		var pos = { x: 0, y: 0, z: 0 };
 		var quat = { x: 0, y: 0, z: 0, w: 1 };
 
