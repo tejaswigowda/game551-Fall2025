@@ -356,19 +356,32 @@ var doLogout = function()
           var p = positions[i];
           var keys = Object.keys(userPins);
           if(!keys.includes(p.userid)){
-            // create new pin
-            var pinGeometry = new THREE.ConeGeometry(5, 20, 32);
-            var pinMaterial = new THREE.MeshBasicMaterial({ color: Math.random() * 0xffffff });
-            var pin = new THREE.Mesh(pinGeometry, pinMaterial);
-            pin.position.set(p.x * 20, p.y * 20, p.z * 20);
-            pin.rotation.x = Math.PI; // point downwards
-            scene.add(pin);
-            userPins[p.userid] = pin;
+            // create new cube
+            var piece = new THREE.BoxGeometry(10, 10, 10).toNonIndexed();
+            var material = new THREE.MeshBasicMaterial({
+              vertexColors: true
+            });
+            var positionAttribute = piece.getAttribute('position');
+            var colors = [];
+            var color = new THREE.Color();
+            color.setHex(0xffffff * Math.random());
+            for (let j = 0; j < positionAttribute.count; j += 6) {
+              colors.push(color.r, color.g, color.b);
+              colors.push(color.r, color.g, color.b);
+              colors.push(color.r, color.g, color.b);
+            }
+            piece.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            var mesh = new THREE.Mesh(piece, material);
+            mesh.position.set(p.x * 20, p.y * 20, p.z * 20);
+            mesh.quaternion.set(p.qx, p.qy, p.qz, p.qw);
+            scene.add(mesh);
+            userPins[p.userid] = mesh;
           }
           else{
-            // update existing pin
-            var pin = userPins[p.userid];
-            pin.position.set(p.x * 20, p.y * 20, p.z * 20);
+            // update position
+            var mesh = userPins[p.userid];
+            mesh.position.set(p.x * 20, p.y * 20, p.z * 20);
+            mesh.quaternion.set(p.qx, p.qy, p.qz, p.qw);
           }
         }
       });
