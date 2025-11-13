@@ -357,7 +357,7 @@ var doLogout = function()
           var keys = Object.keys(userPins);
           if(!keys.includes(p.userid)){
             // create new cube
-            var piece = new THREE.BoxGeometry(10, 10, 10).toNonIndexed();
+            var piece = new THREE.BoxGeometry(100, 100, 100).toNonIndexed();
             var material = new THREE.MeshBasicMaterial({
               vertexColors: true
             });
