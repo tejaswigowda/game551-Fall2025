@@ -1,0 +1,134 @@
+[
+    {
+        "id": "eiffel",
+        "name": "Eiffel Tower",
+        "model": "eiffel_tower.glb",
+        "description": "A 3D model of the Eiffel Tower located in Paris, France.",
+        "category":[
+            "landmark",
+            "architecture"
+        ],
+        "zoom": 0.2,
+        "yOffset": 0
+    },
+    {
+        "id": "babyElephant",
+        "name": "Baby Elephant",
+        "model": "babyelephant.glb",
+        "description": "A cute baby elephant playing",
+        "category":[
+            "animal",
+            "nature"
+        ],
+        "zoom": 0.1,
+        "yOffset": 0
+    },
+    {
+        "id": "banjo",
+        "name": "Banjo",
+        "model": "banjo.glb",
+        "description": "A classic wooden banjo musical instrument",
+        "category":[
+            "musical instrument",
+            "object"
+        ],
+        "zoom": 3,
+        "yOffset": 2
+    },
+    {
+        "id": "khalifaTower",
+        "name": "Burj Khalifa",
+        "model": "burj_khalifa_dubai.glb",
+        "description": "A 3D model of the Burj Khalifa located in Dubai, UAE.",
+        "category":[
+            "landmark",
+            "architecture"
+        ],
+        "zoom": 0.04,
+        "yOffset": 0
+    },
+    {
+        "id": "colloseum",
+        "name": "Colosseum",
+        "model": "colosseum.glb",
+        "description": "A 3D model of the Colosseum located in Rome, Italy.",
+        "category":[
+            "landmark",
+            "architecture"
+        ],
+        "zoom": 0.15,
+        "yOffset": 0
+    },
+    {
+        "id": "eye",
+        "name": "Human Eye",
+        "model": "eye.glb",
+        "description": "A detailed 3D model of the human eye anatomy",
+        "category":[
+            "anatomy",
+            "biology"
+        ],
+        "zoom": 0.5,
+        "yOffset": 1
+    },
+    {
+        "id": "hat",
+        "name": "Hat",
+        "model": "hat.glb",
+        "description": "A stylish hat accessory",
+        "category":[
+            "fashion",
+            "object"
+        ],
+        "zoom": 0.15,
+        "yOffset": 0
+    },
+    {
+        "id": "redFort",
+        "name": "Red Fort",
+        "model": "red_fort.glb",
+        "description": "A 3D model of the Red Fort located in Delhi, India.",
+        "category":[
+            "landmark",
+            "architecture"
+        ],
+        "zoom": 1.5,
+        "yOffset": 1
+    },
+    {
+        "id": "robot1",
+        "name": "Robot",
+        "model": "robot1.glb",
+        "description": "A futuristic robot character",
+        "category":[
+            "robot",
+            "character"
+        ],
+        "zoom": 2,
+        "yOffset": 1
+    },
+    {
+        "id":"robot2",
+        "name":"Android Robot",
+        "model":"robot2.glb",
+        "description":"A 3D model of the Android robot mascot",
+        "category":[
+            "robot",
+            "character"
+        ],
+        "zoom": 2,
+        "yOffset": 1
+    },
+    {
+        "id": "tajMahal",
+        "name": "Taj Mahal",
+        "model": "taj_mahal.glb",
+        "description": "A 3D model of the Taj Mahal located in Agra, India.",
+        "category":[
+            "landmark",
+            "architecture"
+        ],
+        "zoom": 0.003,
+        "yOffset": 0
+    }
+]

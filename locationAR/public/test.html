@@ -1,0 +1,21 @@
+<html>
+<head>
+    <title>Test</title>
+</head>
+<body>
+    <h1>WebXR SLAM Test</h1>
+    <p id="data">Live data will be printed here...</p>
+</body>
+
+<script>
+    var ws = new WebSocket("ws://localhost:" + window.location.port + "/xr-slam-client");
+    ws.onopen = function() {
+        console.log("Connected to server.");
+    };
+    ws.onmessage = function(event) {
+        console.log("Received message: " + event.data);
+        document.getElementById("data").innerHTML = event.data;
+    };
+</script>
+
+</html>

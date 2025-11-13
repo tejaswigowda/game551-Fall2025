@@ -21,7 +21,7 @@ header {
   text-align: left;
   max-width: 420px;
   padding: 0.5em;
-  background-color: rgba(255, 255, 255, 0.90);
+  background-color: rgba(255, 255, 255, 0);
   margin-bottom: 0.5em;
   border-radius: 2px;
 }
@@ -76,6 +76,7 @@ canvas {
     </style>
      <script src='asyncReq.js'></script>
 <script>
+  var glbs = [];
 var main = function(){
   // check whether user is logged in
   loadFile("/loginStatus", function(data){
@@ -83,8 +84,8 @@ var main = function(){
       window.location.href='./login.html'
       return;
     }
-    else{
-      document.getElementById("accountInfo").innerHTML = data;
+    else{      
+   
     }
   });               
 }
@@ -101,18 +102,7 @@ var doLogout = function()
   </head>
   <body onload="main()">
     <header>
-      <details open>
-        <summary>Teleportation</summary>
-        <p>
-          This sample demonstrates teleporting the viewer by updating the
-          XRSession reference space. Select a point on the floor with a
-          controller to teleport to it. Select the leftmost box to rotate to the
-          left by 30 degrees. Selecting the rightmost box rotates the viewer by
-          30 degrees to the right. Select the middle box to reset the
-          viewer orientation.
-          <a class="back" href="./index.html">Back</a>
-        </p>
-      </details>
+
     </header>
     <script type="module">
       import {WebXRButton} from './js/util/webxr-button.js';
@@ -134,7 +124,7 @@ var doLogout = function()
       }
 
       // If requested, don't display the frame rate info.
-      let hideStats = QueryArgs.getBool('hideStats', false);
+      let hideStats = QueryArgs.getBool('hideStats', true);
 
       // XR globals. Several additional reference spaces are required because of
       // how the teleportation mechanic in onSelect works.
@@ -147,7 +137,7 @@ var doLogout = function()
 
       let trackingSpaceOriginInWorldSpace = vec3.create();
       let trackingSpaceHeadingDegrees = 0;  // around +Y axis, positive angles rotate left
-      let floorSize = 10;
+      let floorSize = 140;
       let floorPosition = [0, -floorSize / 2 + 0.01, 0];
       let floorNode = null;
 
@@ -158,8 +148,14 @@ var doLogout = function()
       if (hideStats) {
         scene.enableStats(false);
       }
-      scene.addNode(new Gltf2Node({url: 'cube-room/cube-room.gltf'}));
+      var x = new Gltf2Node({url: 'cube-room/cube-room.gltf'});
+      x.scale = [15,15,15];
+      scene.addNode(x);
+// set gltf zoom
+
       scene.standingStats(true);
+
+
 
       let boxes = [];
 
@@ -236,9 +232,9 @@ var doLogout = function()
         scene.setRenderer(renderer);
 
         // Create several boxes to use for hit testing.
-        addBox(-1.0, 1.6, -1.3, 1.0, 0.0, 0.0, boxes);
-        addBox(0.0, 1.7, -1.5, 0.0, 1.0, 0.0, boxes);
-        addBox(1.0, 1.6, -1.3, 0.0, 0.0, 1.0, boxes);
+     //   addBox(-1.0, 1.6, -1.3, 1.0, 0.0, 0.0, boxes);
+     //   addBox(0.0, 1.7, -1.5, 0.0, 1.0, 0.0, boxes);
+     //   addBox(1.0, 1.6, -1.3, 0.0, 0.0, 1.0, boxes);
 
         // Represent the floor as a box so that we can perform a hit test
         // against it onSelect so that we can teleport the user to that
@@ -476,8 +472,28 @@ var doLogout = function()
         scene.endFrame();
       }
 
-      // Start the XR application.
-      initXR();
+              initXR();
+                    // Start the XR application.
+      loadFile("./lib/meta.json", function(data){
+        glbs = JSON.parse(data);
+              // add glbs to scene
+       for(let i=0; i<glbs.length; i++){
+        let glbNode = new Gltf2Node({url: "lib/" + glbs[i].model});
+       // place in circular carousel
+        let angle = i * (2 * Math.PI / glbs.length);
+        let radius = 4; // radius of carousel
+        let x = radius * Math.cos(angle);
+        let z = radius * Math.sin(angle);
+        mat4.identity(glbNode.matrix);
+        mat4.translate(glbNode.matrix, glbNode.matrix, [x, glbs[i].yOffset, z]);
+        mat4.rotateY(glbNode.matrix, glbNode.matrix, -angle + Math.PI); // face center
+        mat4.scale(glbNode.matrix, glbNode.matrix, [glbs[i].zoom, glbs[i].zoom, glbs[i].zoom]);
+        scene.addNode(glbNode);
+        console.log("Added glb:", glbs[i].model);
+
+      }
+      });   
+
     </script>
   </body>
 </html>

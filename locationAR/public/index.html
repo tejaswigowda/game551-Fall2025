@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html style="background-color: black;">
+
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1, user-scalable=no'>
+  <meta name='mobile-web-app-capable' content='yes'>
+  <meta name='apple-mobile-web-app-capable' content='yes'>
+  <script src="quaternion.min.js"></script>
+  <script src='plotly-2.27.0.min.js'></script>
+  <script src='d3.min.js'></script>
+  <script src='jquery-3.5.1.min.js'></script>
+  <script src='three.min.js'></script>
+  <style>
+    body, html {
+      -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+      tap-highlight-color: rgba(0, 0, 0, 0);
+      background-color: black;
+    }
+
+    button {
+      font-size: 30px;
+      padding: 10px;
+      position: fixed;
+      right: 5px;
+      top: 5px;
+    }
+  </style>
+  <title>WebXR SLAM</title>
+   <script src='asyncReq.js'></script>
+<script>
+var main = function(){
+  // check whether user is logged in
+  loadFile("/loginStatus", function(data){
+    if(data === "0"){
+      window.location.href='./login.html'
+      return;
+    }
+    else{
+      document.getElementById("accountInfo").innerHTML = data;
+    }
+  });               
+}
+
+var doLogout = function()
+{
+  var x = confirm("Logout now?")
+  if(x){
+    loadFile("./logout", function(d){window.location.reload()})
+  }
+}
+</script>
+</head>
+
+<body onload="main()"
+  style="margin:0; margin-top: -20px;padding:0; padding-top:20px; background: black; font-family:Arial, Helvetica, sans-serif; overflow:hidden">
+  <div id="overlay" style="background-color: black;color:white; text-shadow: 0px 0px 2px black; height: 100vh">
+    <header style="background-color: black;margin-top:-30px;padding-top:50px">
+      <h1>WebXR SLAM</h1>
+      <button style="position:fixed; top:30px; right: 20px" id="xr-button" class="barebones-button" disabled>XR not
+        found</button>
+
+      <div id="inAR" style="height:110vh; margin-top:-20px; display: none;background:black">
+        <div id="pose"></div>
+        <p id="details"></p>
+
+        <div id="plot" style="width: 100vw; height: 80vh; background-color: white;filter:invert(1);display:none"></div>
+        <div id="threescene"
+          style="width: 100vw; height: 80vh; background-color: rgb(0, 0, 0);position:fixed; top:200px; z-index:9999999999999999">
+        </div>
+      </div>
+      <div id="warning-zone"></div>
+    </header>
+  </div>
+  <script>
+
+    // check if ios
+    if (navigator.userAgent.match(/(iPod|iPhone|iPad)/)) {
+      window.location.href = "./ios";
+    }
+    var renderer, scene, camera, cube, trackingLine, controls;
+    var line_tracker = [];
+  </script>
+  <script type="module">
+    import * as THREE from "https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc@latest/build-static/three.module.js";
+    import Stats from "https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc@latest/build-static/stats.module.js";
+    import { OrbitControls } from "https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc@latest/build-static/OrbitControls.js";
+
+    // XR globals.
+    let xrButton = document.getElementById('xr-button');
+    let xrSession = null;
+    let xrRefSpace = null;
+
+    // WebGL scene globals.
+    let gl = null;
+
+    function checkSupportedState() {
+      navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+        if (supported) {
+          xrButton.innerHTML = 'Start';
+        } else {
+          xrButton.innerHTML = 'AR not found';
+        }
+
+        xrButton.disabled = !supported;
+      });
+    }
+
+    function initXR() {
+      if (!window.isSecureContext) {
+        let message = "WebXR unavailable due to insecure context";
+        document.getElementById("warning-zone").innerText = message;
+      }
+
+      if (navigator.xr) {
+        // if touch screen, use touchstart
+        //if('ontouchstart' in window) {
+        //  xrButton.addEventListener('touchstart', onButtonClicked);
+        //} else {
+        xrButton.addEventListener('click', onButtonClicked);
+        //}
+        navigator.xr.addEventListener('devicechange', checkSupportedState);
+        checkSupportedState();
+      }
+    }
+
+    function initPlot() {
+      document.getElementById('inAR').style.display = 'block';
+
+      // three scene
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(
+        45,
+        window.innerWidth / window.innerHeight,
+        1,
+        2000
+      );
+      camera.position.set(0, 100, 600);
+      renderer = new THREE.WebGLRenderer();
+      renderer.setSize(document.getElementById('threescene').clientWidth, document.getElementById('threescene').clientHeight);
+      document.getElementById('threescene').appendChild(renderer.domElement);
+
+      // infinite grid
+      const grid = new THREE.GridHelper(4000, 80, 0xffffff, 0xcccccc);
+      grid.material.opacity = 0.3;
+      grid.material.transparent = true;
+
+      const axesHelper = new THREE.AxesHelper(10);
+      scene.add(axesHelper);
+      scene.add(grid);
+
+      const piece = new THREE.BoxGeometry(30, 30, 30).toNonIndexed();
+      const material = new THREE.MeshBasicMaterial({
+        vertexColors: true
+      });
+      const positionAttribute = piece.getAttribute('position');
+      const colors = [];
+
+      const color = new THREE.Color();
+
+      for (let i = 0; i < positionAttribute.count; i += 6) {
+
+        color.setHex(0xffffff * Math.random());
+
+        colors.push(color.r, color.g, color.b);
+        colors.push(color.r, color.g, color.b);
+        colors.push(color.r, color.g, color.b);
+
+        colors.push(color.r, color.g, color.b);
+        colors.push(color.r, color.g, color.b);
+        colors.push(color.r, color.g, color.b);
+      } // for
+
+      // define the new attribute
+      piece.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      cube = new THREE.Mesh(piece, material);
+      scene.add(cube);
+      cube.position.set(0 ,100, 0);
+
+      var lineMaterial = new THREE.LineBasicMaterial({ color: 0xff00ff });
+      var lineGeometry = new THREE.BufferGeometry();
+
+      lineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(line_tracker), 3));
+      trackingLine = new THREE.Line(lineGeometry, lineMaterial);
+      scene.add(trackingLine);
+
+      // orbital controls
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.target.set(0, 100, 0);
+      controls.enableZoom = true;
+      controls.update();
+
+      animate();
+    }
+
+
+    function animate() {
+      requestAnimationFrame(animate);
+      cube.position.sub(camera.position, cube.position).normalize();
+      controls.update();
+      cube.quaternion.copy(quat);
+      var scaleFac = 20;
+      cube.position.set(pos.x * scaleFac, pos.y * scaleFac, pos.z * scaleFac);
+      line_tracker.push(pos.x * scaleFac, pos.y * scaleFac, pos.z * scaleFac);
+      var lineGeometry = new THREE.BufferGeometry();
+      lineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(line_tracker), 3));
+      trackingLine.geometry = lineGeometry;
+
+      renderer.render(scene, camera);
+    }
+    function onButtonClicked() {
+      if (!xrSession) {
+        navigator.xr.requestSession('immersive-ar', {
+          optionalFeatures: ['dom-overlay'],
+          domOverlay: { root: document.getElementById('overlay') }
+        }).then(onSessionStarted, onRequestSessionError);
+        document.getElementById('inAR').style.display = 'block';
+        // initPlot();
+      } else {
+        xrSession.end();
+        document.getElementById('inAR').style.display = 'none';
+      }
+    }
+
+    function onSessionStarted(session) {
+      xrSession = session;
+      xrButton.innerHTML = 'Stop';
+
+      // Show which type of DOM Overlay got enabled (if any)
+      if (session.domOverlayState) {
+      }
+
+      session.addEventListener('end', onSessionEnded);
+
+      let canvas = document.createElement('canvas');
+      gl = canvas.getContext('webgl', {
+        xrCompatible: true
+      });
+      session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+      session.requestReferenceSpace('local').then((refSpace) => {
+        xrRefSpace = refSpace;
+        session.requestAnimationFrame(onXRFrame);
+      });
+    }
+
+    function onRequestSessionError(ex) {
+      alert("Failed to start immersive AR session.");
+      console.error(ex.message);
+    }
+
+    function onEndSession(session) {
+      session.end();
+    }
+
+    function onSessionEnded(event) {
+      xrSession = null;
+      xrButton.innerHTML = 'Start';
+      gl = null;
+      window.location.reload();
+    }
+
+    var framen = 0;
+    function onXRFrame(t, frame) {
+      framen++;
+      let session = frame.session;
+      session.requestAnimationFrame(onXRFrame);
+
+      if (framen < 4) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, session.renderState.baseLayer.framebuffer);
+
+        // Update the clear color so that we can observe the color in the
+        // headset changing over time. Use a scissor rectangle to keep the AR
+        // scene visible.
+        const width = session.renderState.baseLayer.framebufferWidth;
+        const height = session.renderState.baseLayer.framebufferHeight;
+        gl.enable(gl.SCISSOR_TEST);
+        gl.scissor(0, 0, width, height);
+
+        //  black bg
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      }
+
+
+      let pose = frame.getViewerPose(xrRefSpace);
+      if (pose) {
+        const p = pose.transform.position;
+        const q = pose.transform.orientation;
+        updatePose(p, q);
+
+      } else {
+        document.getElementById('pose').innerHTML = "<p style='color:red'>No pose</p><br><br>";
+      }
+    }
+
+    var quat = new THREE.Quaternion(0, 0, 0, 1);
+    var pos = new THREE.Vector3(0, 0, 0);
+
+    function updatePose(p, q) {
+      document.getElementById('pose').innerHTML = "Position: <br>" +
+        p.x.toFixed(3) + ", " + p.y.toFixed(3) + ", " + p.z.toFixed(3) + "<br> " +
+        "Orientation: <br>" + q.x.toFixed(3) + ", " + q.y.toFixed(3) + ", " + q.z.toFixed(3) + ", " + q.w.toFixed(3);
+
+        quat = new THREE.Quaternion(q.x, q.y, q.z, q.w);
+        pos = new THREE.Vector3(p.x, p.y, p.z);
+
+      if (sendData) {
+        $.get("./data", { x: p.x.toFixed(5), y: p.y.toFixed(5), z: p.z.toFixed(5), qx: q.x.toFixed(5), qy: q.y.toFixed(5), qz: q.z.toFixed(5), qw: q.w.toFixed(5) }, function (data) {
+          //console.log(data);
+        });
+      }
+
+      // append data
+      Plotly.extendTraces('plot', {
+        x: [[p.x.toFixed(5)]],
+        y: [[p.y.toFixed(5)]],
+        z: [[p.z.toFixed(5)]]
+      }, [0]);
+      // move marker
+      Plotly.restyle('plot', {
+        x: [[p.x.toFixed(5)]],
+        y: [[p.y.toFixed(5)]],
+        z: [[p.z.toFixed(5)]]
+      }, [1]);
+    }
+    initXR();
+    initPlot();
+
+    var sendData = false;
+    $.get("./sendData", function (data) {
+      if (data == "ok") {
+        sendData = true;
+      }
+    });
+  </script>
+</body>
+
+</html>
