@@ -18,7 +18,7 @@
     setInterval(function () {
      // if (sendData) {
         $.get("../setPosition", { x: pos.x.toFixed(5), y: pos.y.toFixed(5), z: pos.z.toFixed(5), qx: quat.x.toFixed(5), qy: quat.y.toFixed(5), qz: quat.z.toFixed(5), qw: quat.w.toFixed(5) }, function (data) {
-          //console.log(data);
+          console.log(data);
         });
       //}
     }, 1000);
