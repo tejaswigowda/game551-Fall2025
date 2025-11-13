@@ -360,10 +360,6 @@ var doLogout = function()
             var geometry = new THREE.SphereGeometry(5, 32, 32);
             var material = new THREE.MeshBasicMaterial({ color: Math.random() * 0xffffff });
             var mesh = new THREE.Mesh(geometry, material);  
-            var label = createTextLabel(p.userid);
-            mesh.add(label);
-            
-
             mesh.position.set(p.x * 20, p.y * 20, p.z * 20);
             mesh.quaternion.set(p.qx, p.qy, p.qz, p.qw);
             scene.add(mesh);
