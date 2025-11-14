@@ -153,7 +153,7 @@ var doLogout = function()
       scene.add(axesHelper);
       scene.add(grid);
 
-      const piece = new THREE.BoxGeometry(30, 30, 30).toNonIndexed();
+      const piece = new THREE.BoxGeometry(3, 3, 3).toNonIndexed();
       const material = new THREE.MeshBasicMaterial({
         vertexColors: true
       });
@@ -343,33 +343,32 @@ var doLogout = function()
     setInterval(function () {
      // if (sendData) {
         $.get("./setPosition", { x: pos.x.toFixed(5), y: pos.y.toFixed(5), z: pos.z.toFixed(5), qx: quat.x.toFixed(5), qy: quat.y.toFixed(5), qz: quat.z.toFixed(5), qw: quat.w.toFixed(5) }, function (data) {
-          //console.log(data);
         });
       //}
-    }, 1000);
+    }, 1000/10);
 
 
     setInterval(function () {
       $.get("./getPositions", function (positions) {
-        console.log(positions);
         for(var i=0; i<positions.length; i++){
           var p = positions[i];
           var keys = Object.keys(userPins);
+          
           if(!keys.includes(p.userid)){
-            // create new labeled sphere for this user
-            var geometry = new THREE.SphereGeometry(5, 32, 32);
-            var material = new THREE.MeshBasicMaterial({ color: Math.random() * 0xffffff });
-            var mesh = new THREE.Mesh(geometry, material);  
-            mesh.position.set(p.x * 200, p.y * 200, p.z * 200);
-            mesh.quaternion.set(p.qx, p.qy, p.qz, p.qw);
-            scene.add(mesh);
-            userPins[p.userid] = mesh;
+            // create new pin
+            var pinGeom = new THREE.ConeGeometry(10, 40, 80);
+            var pinMat = new THREE.MeshBasicMaterial({ color: Math.random() * 0xffffff });
+            var pinMesh = new THREE.Mesh(pinGeom, pinMat);
+            pinMesh.position.set(p.x*20, p.y*20, p.z*20);
+            pinMesh.rotation.x = Math.PI;
+            scene.add(pinMesh);
+            userPins[p.userid] = pinMesh;
           }
           else{
-            // update position
-            var mesh = userPins[p.userid];
-            mesh.position.set(p.x * 200, p.y * 200, p.z * 200);
-            mesh.quaternion.set(p.qx, p.qy, p.qz, p.qw);
+            // update existing pin
+            var pinMesh = userPins[p.userid];
+            pinMesh.position.set(p.x*20, p.y*20, p.z*20);
+            pinMesh.quaternion.set(parseFloat(p.qx), parseFloat(p.qy), parseFloat(p.qz), parseFloat(p.qw));
           }
         }
       });

@@ -2,8 +2,8 @@ var url = require("url"),
 	querystring = require("querystring");
 var passport = require('passport');
 var fs = require('fs');
-//	var dbURL = 'mongodb://44.246.204.171:27017/test';
-	var dbURL = 'mongodb://127.0.0.1:27017/test';
+	var dbURL = 'mongodb://44.246.204.171:27017/test';
+//	var dbURL = 'mongodb://127.0.0.1:27017/test';
 var path = require('path'),
   express = require('express'),
   db = require('mongoskin').db(dbURL, {native_parser:true});
@@ -40,6 +40,7 @@ require('./passport/routes.js')(app, passport); // load our routes and pass in o
 
 
 app.get("/setPosition", isLoggedIn, function(req,res){
+          res.end("ok");
   var user = "guest";
   if(req.user && req.user.local && req.user.local.email) user = req.user.local.email;
   var arg = req.query;
@@ -58,7 +59,6 @@ app.get("/setPosition", isLoggedIn, function(req,res){
       // insert
       db.collection("positions").insertOne(arg, function(err, result){
         if(err) console.log(err);
-        res.end("ok");
       });
     }
   });
