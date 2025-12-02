@@ -8,11 +8,7 @@
     <style>
         body {
             margin: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-                "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-                sans-serif;
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
+            background-color: #999999;
         }
 
         code {
@@ -52,7 +48,7 @@
 
         #ARButton {
             bottom: 20%;
-            background-color: rgba(20, 20, 20, 0.8);
+            background-color: rgba(20, 20, 20, 0.8)!important;
         }
     </style>
 </head>
@@ -240,10 +236,7 @@
                         });
                 });
 
-                session.addEventListener("end", function () {
-                    hitTestSourceRequested = false;
-                    hitTestSource = null;
-                });
+                session.addEventListener("end", onSessionEnded);
 
                 hitTestSourceRequested = true;
             }
@@ -265,6 +258,10 @@
         }
 
         renderer.render(scene, camera);
+    }
+
+    function onSessionEnded() {
+        window.location.reload();
     }
 
 </script>
