@@ -68,6 +68,7 @@ app.get("/getPositions", function(req,res){
   db.collection("positions").find().toArray(function(err, items){
     if(err) console.log(err);
     res.json(items);
+    res.end();
   });
 })
 

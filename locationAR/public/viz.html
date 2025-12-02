@@ -32,39 +32,17 @@
   var pos = { x: 0, y: 0, z: 0 };
   var quat = { x: 0, y: 0, z: 0, w: 1 };
   var userPins = {};
+  var positions = [];
 
-var main = function(){
-  // check whether user is logged in
-  loadFile("/loginStatus", function(data){
-    if(data === "0"){
-      window.location.href='./login.html'
-      return;
-    }
-    else{
-      document.getElementById("subtitle").innerHTML = JSON.parse(data).local.email;
-    }
-  });               
-}
-
-var doLogout = function()
-{
-  var x = confirm("Logout now?")
-  if(x){
-    loadFile("./logout", function(d){window.location.reload()})
-  }
-}
 </script>
 </head>
 
-<body onload="main()"
+<body
   style="margin:0; margin-top: -20px;padding:0; padding-top:20px; background: black; font-family:Arial, Helvetica, sans-serif; overflow:hidden">
   <div id="overlay" style="background-color: black;color:white; text-shadow: 0px 0px 2px black; height: 100vh">
     <header style="background-color: black;margin-top:-30px;padding-top:50px">
-      <h1>SLAM Tracking</h1>
+      <h1 id="title">Tracking Visualizer</h1>
       <h3 id="subtitle"></h3>
-      <button style="position:fixed; top:30px; right: 20px" id="xr-button" class="barebones-button" disabled>XR not
-        found</button>
-
       <div id="inAR" style="height:110vh; margin-top:-20px; display: none;background:black">
         <div id="pose"></div>
         <p id="details"></p>
@@ -91,46 +69,12 @@ var doLogout = function()
     import Stats from "https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc@latest/build-static/stats.module.js";
     import { OrbitControls } from "https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc@latest/build-static/OrbitControls.js";
 
-    const positionLerpAlpha = 0.2;
-    const quaternionSlerpAlpha = 0.2;
 
-    // XR globals.
-    let xrButton = document.getElementById('xr-button');
-    let xrSession = null;
-    let xrRefSpace = null;
 
     // WebGL scene globals.
     let gl = null;
 
-    function checkSupportedState() {
-      navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-        if (supported) {
-          xrButton.innerHTML = 'Start';
-        } else {
-          xrButton.innerHTML = 'AR not found';
-        }
 
-        xrButton.disabled = !supported;
-      });
-    }
-
-    function initXR() {
-      if (!window.isSecureContext) {
-        let message = "WebXR unavailable due to insecure context";
-        document.getElementById("warning-zone").innerText = message;
-      }
-
-      if (navigator.xr) {
-        // if touch screen, use touchstart
-        //if('ontouchstart' in window) {
-        //  xrButton.addEventListener('touchstart', onButtonClicked);
-        //} else {
-        xrButton.addEventListener('click', onButtonClicked);
-        //}
-        navigator.xr.addEventListener('devicechange', checkSupportedState);
-        checkSupportedState();
-      }
-    }
 
     function initPlot() {
       document.getElementById('inAR').style.display = 'block';
@@ -157,7 +101,7 @@ var doLogout = function()
       scene.add(axesHelper);
       scene.add(grid);
 
-      const piece = new THREE.BoxGeometry(30, 30, 30).toNonIndexed();
+      const piece = new THREE.BoxGeometry(3, 3, 3).toNonIndexed();
       const material = new THREE.MeshBasicMaterial({
         vertexColors: true
       });
@@ -206,17 +150,44 @@ var doLogout = function()
       requestAnimationFrame(animate);
       cube.position.sub(camera.position, cube.position).normalize();
       controls.update();
+      cube.quaternion.copy(quat);
       var scaleFac = 20;
-      var targetPos = new THREE.Vector3(pos.x * scaleFac, pos.y * scaleFac, pos.z * scaleFac);
-      cube.position.lerp(targetPos, positionLerpAlpha);
-      cube.quaternion.slerp(quat, quaternionSlerpAlpha);
+      cube.position.set(pos.x * scaleFac, pos.y * scaleFac, pos.z * scaleFac);
       line_tracker.push(pos.x * scaleFac, pos.y * scaleFac, pos.z * scaleFac);
       var lineGeometry = new THREE.BufferGeometry();
       lineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(line_tracker), 3));
       trackingLine.geometry = lineGeometry;
 
+      updatePins();
       renderer.render(scene, camera);
     }
+
+    function updatePins() {
+      for(var i=0; i<positions.length; i++){
+          var p = positions[i];
+          var keys = Object.keys(userPins);
+          
+          if(!keys.includes(p.userid)){
+            // create new pin
+            var pinGeom = new THREE.ConeGeometry(10, 40, 80);
+            var pinMat = new THREE.MeshBasicMaterial({ color: Math.random() * 0xffffff });
+            var pinMesh = new THREE.Mesh(pinGeom, pinMat);
+
+            pinMesh.position.lerp(new THREE.Vector3(p.x*20, p.y*20, p.z*20), 0.1);
+            pinMesh.quaternion.slerp(new THREE.Quaternion(parseFloat(p.qx), parseFloat(p.qy), parseFloat(p.qz), parseFloat(p.qw)), 0.1);
+            scene.add(pinMesh);
+            userPins[p.userid] = pinMesh;
+          }
+          else{
+            // update existing pin
+            var pinMesh = userPins[p.userid];
+            console.log(p);
+            pinMesh.position.lerp(new THREE.Vector3(p.x*20, p.y*20, p.z*20), 0.1);
+            pinMesh.quaternion.slerp(new THREE.Quaternion(parseFloat(p.qx), parseFloat(p.qy), parseFloat(p.qz), parseFloat(p.qw)), 0.1);
+          }
+        }
+    }
+
     function onButtonClicked() {
       if (!xrSession) {
         navigator.xr.requestSession('immersive-ar', {
@@ -335,7 +306,7 @@ var doLogout = function()
         z: [[p.z.toFixed(5)]]
       }, [1]);
     }
-    initXR();
+
     initPlot();
 
     var sendData = false;
@@ -350,10 +321,14 @@ var doLogout = function()
         $.get("./setPosition", { x: pos.x.toFixed(5), y: pos.y.toFixed(5), z: pos.z.toFixed(5), qx: quat.x.toFixed(5), qy: quat.y.toFixed(5), qz: quat.z.toFixed(5), qw: quat.w.toFixed(5) }, function (data) {
         });
       //}
-    }, 1000/30);
+    }, 1000/10);
 
 
-    
+    setInterval(function () {
+      $.get("./getPositions", function (data) {
+        positions = data;
+      });
+    }, 1000/10); // 30 fps
   </script>
 </body>
 
