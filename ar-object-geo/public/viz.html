@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dropped Objects Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", Arial, sans-serif; }
+    #container { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; height: 100vh; }
+    #map { width: 100%; height: 100vh; }
+    #sidebar { background: #222; color: #fff; overflow-y: auto; padding: 10px; }
+    #sidebar h2 { margin: 10px 0; font-size: 16px; }
+    .item { padding: 8px; border-bottom: 1px solid #444; }
+    .coords { font-family: monospace; }
+    .meta { color: #bbb; font-size: 12px; }
+    .empty { color: #bbb; padding: 10px; }
+    #controls { padding: 8px; border-bottom: 1px solid #444; }
+    #controls button { margin-right: 6px; }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="map"></div>
+    <div id="sidebar">
+      <div id="controls">
+        <button id="refresh">Refresh</button>
+        <button id="fit">Fit</button>
+      </div>
+      <h2>Recent Drops</h2>
+      <div id="list"></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map');
+    const tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    let markers = [];
+
+    function fitMapToMarkers() {
+      const group = new L.FeatureGroup(markers);
+      if (markers.length > 0) {
+        map.fitBounds(group.getBounds().pad(0.2));
+      } else {
+        map.setView([0,0], 2);
+      }
+    }
+
+    function addItemToList(item) {
+      const list = document.getElementById('list');
+      const div = document.createElement('div');
+      div.className = 'item';
+      const when = item.createdAt ? new Date(item.createdAt) : (item.timestamp ? new Date(item.timestamp) : null);
+      const whenStr = when ? when.toLocaleString() : '—';
+      div.innerHTML = `
+        <div class="coords">${Number(item.lat).toFixed(6)}, ${Number(item.lon).toFixed(6)}</div>
+        <div class="meta">modelIndex: ${item.modelIndex ?? '—'} | alt: ${item.alt ?? '—'} | ${whenStr}</div>
+      `;
+      list.appendChild(div);
+    }
+
+    function renderDrops(items) {
+      // clear
+      markers.forEach(m => m.remove());
+      markers = [];
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+
+      if (!items || items.length === 0) {
+        list.innerHTML = '<div class="empty">No drops yet.</div>';
+        fitMapToMarkers();
+        return;
+      }
+
+      items.forEach(item => {
+        if (item.lat != null && item.lon != null) {
+          const marker = L.marker([Number(item.lat), Number(item.lon)]);
+          const when = item.createdAt ? new Date(item.createdAt) : (item.timestamp ? new Date(item.timestamp) : null);
+          const whenStr = when ? when.toLocaleString() : '';
+          marker.bindPopup(`Lat: ${Number(item.lat).toFixed(6)}<br>Lon: ${Number(item.lon).toFixed(6)}<br>Alt: ${item.alt ?? ''}<br>${whenStr}`);
+          marker.addTo(map);
+          markers.push(marker);
+          addItemToList(item);
+        }
+      });
+
+      fitMapToMarkers();
+    }
+
+    async function fetchDrops() {
+      try {
+        const res = await fetch('/api/dropObject');
+        if (!res.ok) throw new Error('Failed to fetch');
+        const data = await res.json();
+        renderDrops(data.items || []);
+      } catch (e) {
+        console.warn('Fetch drops failed', e);
+      }
+    }
+
+    document.getElementById('refresh').addEventListener('click', fetchDrops);
+    document.getElementById('fit').addEventListener('click', fitMapToMarkers);
+
+    fetchDrops();
+    setInterval(fetchDrops, 10000);
+  </script>
+</body>
+</html>

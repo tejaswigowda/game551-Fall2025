@@ -67,6 +67,9 @@ app.post("/api/dropObject"/*, isLoggedIn*/, function(req,res){
       lon: payload.lon,
       alt: payload.alt,
       localPos: payload.localPos,
+      quaternion: payload.quaternion,
+      hitTestMatrix: payload.hitTestMatrix,
+      planeMetadata: payload.planeMetadata,
       timestamp: payload.timestamp || Date.now(),
       createdAt: new Date(payload.timestamp || Date.now())
     };

@@ -74,6 +74,21 @@
             display: inline-block;
             width: 80px;
         }
+
+        #toggle-planes {
+            margin-top: 8px;
+            padding: 6px 10px;
+            background: rgba(0, 136, 255, 0.6);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        #toggle-planes:active {
+            background: rgba(0, 136, 255, 1);
+        }
     </style>
 </head>
 
@@ -84,6 +99,7 @@
         <div class="status-line"><span class="label">GPS:</span><span id="hud-gps">—</span></div>
         <div class="status-line"><span class="label">Heading:</span><span id="hud-heading">—</span></div>
         <div class="status-line"><span class="label">Last Drop:</span><span id="hud-last">—</span></div>
+        <button id="toggle-planes">Show Surfaces</button>
     </div>
 
     <canvas id="canvas"></canvas>
@@ -105,6 +121,7 @@
     let reticle;
     let hitTestSource = null;
     let hitTestSourceRequested = false;
+    let lastReticleMatrix = null; // Capture hit test surface
 
     let scene, camera, renderer;
 
@@ -112,6 +129,16 @@
     let geoOrigin = null; // {lat, lon, alt}
     let headingDeg = null; // degrees clockwise from North
     let hasGeo = false;
+    
+    // Visual place recognition state
+    let currentCameraSnapshot = null; // Current frame texture for feature matching
+    let placeRecognitionEnabled = true; // Toggle for feature matching
+
+    // Dropped objects from server
+    let droppedObjects = new Map(); // Map of dropId -> {id, lat, lon, alt, mesh}
+    let frustum = new THREE.Frustum();
+    let cameraMatrix = new THREE.Matrix4();
+    let showSurfacePlanes = false; // Toggle for surface visualization
 
     let models = [
         "./glbs/dylan_armchair_yolk_yellow.glb",
@@ -124,6 +151,7 @@
     let modelScaleFactor = [0.01, 0.01, 0.005, 0.01, 0.01, 0.01];
     let items = [];
     let itemSelectedIndex = 0;
+    let modelCache = {}; // Cache loaded GLTF models by index
 
     let controller;
 
@@ -206,10 +234,20 @@
 
         // Capture GPS and heading upfront
         initGeolocation();
+
+        // Fetch dropped objects from server
+        fetchDroppedObjects();
+        setInterval(fetchDroppedObjects, 5000);
+
+        // Setup surface plane toggle
+        document.getElementById('toggle-planes').addEventListener('click', toggleSurfacePlanes);
     }
 
     function onSelect() {
         if (reticle.visible) {
+            // Capture the hit test surface matrix
+            lastReticleMatrix = reticle.matrix.clone();
+
             let newModel = items[itemSelectedIndex].clone();
             newModel.visible = true;
             // this one will set the position but not the rotation
@@ -238,13 +276,17 @@
                 const hudLast = document.getElementById('hud-last');
                 if (hudLast) hudLast.textContent = coords;
                 
-                // Persist to backend
+                // Persist to backend with surface data
                 persistCoordinates({
                     modelIndex: itemSelectedIndex,
                     lat: approxGeo.lat,
                     lon: approxGeo.lon,
                     alt: approxGeo.alt,
                     localPos: { x: worldPos.x, y: worldPos.y, z: worldPos.z },
+                    quaternion: { x: newModel.quaternion.x, y: newModel.quaternion.y, z: newModel.quaternion.z, w: newModel.quaternion.w },
+                    hitTestMatrix: Array.from(lastReticleMatrix.elements),
+                    planeMetadata: extractPlaneMetadata(lastReticleMatrix),
+                    cameraSnapshot: currentCameraSnapshot,
                     timestamp: Date.now()
                 });
             } else {
@@ -278,6 +320,76 @@
                 onClicked(e, items[i], i);
             });
         }
+    }
+
+    function captureCanvasSnapshot() {
+        // Capture current renderer canvas as data URL for visual place recognition
+        try {
+            const dataUrl = renderer.domElement.toDataURL('image/jpeg', 0.6);
+            return dataUrl;
+        } catch (e) {
+            console.warn('Failed to capture snapshot:', e);
+            return null;
+        }
+    }
+
+    function computeImageHash(dataUrl) {
+        // Simple perceptual hash using color histogram
+        // In production, use ORB/SIFT features or ML model
+        if (!dataUrl) return null;
+        
+        const img = new Image();
+        img.src = dataUrl;
+        
+        return new Promise((resolve) => {
+            img.onload = () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 8;
+                    canvas.height = 8;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, 8, 8);
+                    
+                    const imageData = ctx.getImageData(0, 0, 8, 8);
+                    const data = imageData.data;
+                    
+                    let hash = '';
+                    for (let i = 0; i < data.length; i += 4) {
+                        const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
+                        hash += brightness > 128 ? '1' : '0';
+                    }
+                    resolve(hash);
+                } catch (e) {
+                    console.warn('Failed to compute hash:', e);
+                    resolve(null);
+                }
+            };
+            img.onerror = () => resolve(null);
+        });
+    }
+
+    function hammingDistance(hash1, hash2) {
+        // Compute Hamming distance between two binary hashes
+        if (!hash1 || !hash2 || hash1.length !== hash2.length) return Infinity;
+        
+        let distance = 0;
+        for (let i = 0; i < hash1.length; i++) {
+            if (hash1[i] !== hash2[i]) distance++;
+        }
+        return distance;
+    }
+
+    function computePlaceRecognitionConfidence(storedHash, currentHash) {
+        // Convert Hamming distance to confidence (0-1)
+        // Max distance is hash length (64), return 0 confidence if distance > 20
+        const distance = hammingDistance(storedHash, currentHash);
+        if (distance === Infinity) return 0;
+        
+        const maxDistance = 20; // Threshold for no match
+        if (distance > maxDistance) return 0;
+        
+        // Confidence decreases linearly with distance
+        return Math.max(0, 1 - (distance / maxDistance));
     }
 
     function animate() {
@@ -318,6 +430,29 @@
                 }
             }
         }
+
+        // Update frustum culling for dropped objects
+        camera.updateMatrixWorld();
+        cameraMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+        frustum.setFromProjectionMatrix(cameraMatrix);
+        
+        // Capture camera snapshot for place recognition (every 10 frames to reduce cost)
+        if (frame && frame.getCounter && frame.getCounter() % 10 === 0) {
+            currentCameraSnapshot = captureCanvasSnapshot();
+        }
+        
+        droppedObjects.forEach(drop => {
+            if (drop.mesh) {
+                drop.mesh.visible = frustum.containsPoint(drop.mesh.position);
+                
+                // Orient badges toward camera
+                drop.mesh.traverse(child => {
+                    if (child.userData && child.userData.lookAtCamera) {
+                        child.lookAt(camera.position);
+                    }
+                });
+            }
+        });
 
         renderer.render(scene, camera);
     }
@@ -446,6 +581,344 @@
         .then(res => res.json())
         .then(result => console.log('Persisted:', result))
         .catch(err => console.warn('Persist failed:', err));
+    }
+
+    async function fetchDroppedObjects() {
+        try {
+            const res = await fetch('/api/dropObject');
+            if (!res.ok) return;
+            const data = await res.json();
+            const items = data.items || [];
+            updateDroppedObjects(items);
+        } catch (e) {
+            console.warn('Fetch dropped objects failed:', e);
+        }
+    }
+
+    function updateDroppedObjects(items) {
+        // Build set of incoming IDs
+        const incomingIds = new Set(items.map(i => String(i._id || i.id)));
+
+        // Remove drops no longer in server list
+        const toRemove = [];
+        droppedObjects.forEach((drop, dropId) => {
+            if (!incomingIds.has(dropId)) {
+                scene.remove(drop.mesh);
+                toRemove.push(dropId);
+            }
+        });
+        toRemove.forEach(id => droppedObjects.delete(id));
+
+        // Add or skip existing drops
+        items.forEach(item => {
+            const dropId = String(item._id || item.id);
+            
+            // Skip if already rendered
+            if (droppedObjects.has(dropId)) {
+                return;
+            }
+
+            // Compute plane match confidence if current surface available
+            let matchConfidence = null;
+            if (lastReticleMatrix && item.planeMetadata) {
+                try {
+                    const currentMeta = extractPlaneMetadata(lastReticleMatrix);
+                    const match = findMatchingPlane(item.planeMetadata, currentMeta);
+                    matchConfidence = Math.round(match.confidence * 100);
+                } catch (e) {
+                    console.warn('Could not compute plane match:', e);
+                }
+            }
+
+            // Compute place recognition confidence if snapshots available
+            let placeRecognitionConfidence = 0;
+            if (placeRecognitionEnabled && item.cameraSnapshot && currentCameraSnapshot) {
+                Promise.all([
+                    computeImageHash(item.cameraSnapshot),
+                    computeImageHash(currentCameraSnapshot)
+                ]).then(([storedHash, currentHash]) => {
+                    placeRecognitionConfidence = computePlaceRecognitionConfidence(storedHash, currentHash);
+                    if (placeRecognitionConfidence > 0.4) {
+                        console.log(`Place recognition match for ${dropId}: ${Math.round(placeRecognitionConfidence * 100)}%`);
+                    }
+                }).catch(e => console.warn('Place recognition failed:', e));
+            }
+
+            // Create and add new drop
+            const marker = createDropMarker(item, matchConfidence);
+            if (marker) {
+                scene.add(marker);
+                droppedObjects.set(dropId, {
+                    id: dropId,
+                    lat: item.lat,
+                    lon: item.lon,
+                    alt: item.alt,
+                    mesh: marker,
+                    matchConfidence: matchConfidence,
+                    placeRecognitionConfidence: placeRecognitionConfidence
+                });
+            }
+        });
+    }
+
+    function createDropMarker(item, matchConfidence) {
+        if (!hasGeo || !geoOrigin) return null;
+
+        // Convert GPS back to local XR space
+        const R = 6378137;
+        const lat0 = geoOrigin.lat * Math.PI / 180.0;
+        const lon0 = geoOrigin.lon * Math.PI / 180.0;
+        const lat = item.lat * Math.PI / 180.0;
+        const lon = item.lon * Math.PI / 180.0;
+
+        let north = (lat - lat0) * R;
+        let east = (lon - lon0) * R * Math.cos(lat0);
+
+        // Reverse heading rotation if available
+        if (typeof headingDeg === 'number') {
+            const h = headingDeg * Math.PI / 180.0;
+            const cosH = Math.cos(-h);
+            const sinH = Math.sin(-h);
+            const e = east, n = north;
+            east =  e * cosH - n * sinH;
+            north = e * sinH + n * cosH;
+        }
+
+        const y = (item.alt || 0) - (geoOrigin.alt || 0);
+        const modelIdx = item.modelIndex || 0;
+        let marker = null;
+
+        // Clone the model if available
+        if (items[modelIdx]) {
+            marker = items[modelIdx].clone();
+            marker.visible = true;
+            const scaleFactor = modelScaleFactor[modelIdx] || 0.01;
+            marker.scale.set(scaleFactor, scaleFactor, scaleFactor);
+            marker.position.set(east, y, north);
+            
+            // Restore quaternion if available
+            if (item.quaternion) {
+                marker.quaternion.set(
+                    item.quaternion.x,
+                    item.quaternion.y,
+                    item.quaternion.z,
+                    item.quaternion.w
+                );
+            }
+            
+            // Add surface plane visualization if hit test matrix available
+            if (item.hitTestMatrix && item.hitTestMatrix.length === 16) {
+                const surfacePlane = createSurfacePlane(item.hitTestMatrix, marker.position);
+                if (surfacePlane) marker.add(surfacePlane);
+            }
+            
+            // Add confidence badge if available
+            if (item.planeMetadata) {
+                const badge = createConfidenceBadge(item.planeMetadata, matchConfidence);
+                if (badge) marker.add(badge);
+            }
+            
+            return marker;
+        }
+
+        // Fallback: create green sphere if model not ready
+        const geom = new THREE.SphereGeometry(0.1, 8, 8);
+        const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        marker = new THREE.Mesh(geom, mat);
+        marker.position.set(east, y, north);
+        return marker;
+    }
+
+    function createSurfacePlane(hitTestMatrixArray, dropPos) {
+        try {
+            // Extract normal from hit test matrix (Y column typically points up along surface)
+            const mat = new THREE.Matrix4().fromArray(hitTestMatrixArray);
+            const normal = new THREE.Vector3(0, 1, 0);
+            normal.applyQuaternion(new THREE.Quaternion().setFromRotationMatrix(mat));
+            
+            // Create small plane visualization (0.3m square)
+            const planeGeom = new THREE.PlaneGeometry(0.3, 0.3);
+            const planeMat = new THREE.MeshBasicMaterial({
+                color: 0x0088ff,
+                transparent: true,
+                opacity: 0.3,
+                side: THREE.DoubleSide
+            });
+            const plane = new THREE.Mesh(planeGeom, planeMat);
+            plane.userData.isSurfacePlane = true; // Mark for toggling
+            
+            // Align plane to surface normal
+            const axis = new THREE.Vector3(0, 1, 0).cross(normal).normalize();
+            const angle = Math.acos(new THREE.Vector3(0, 1, 0).dot(normal));
+            if (angle > 0.01) {
+                plane.rotateOnWorldAxis(axis, angle);
+            }
+            
+            return plane;
+        } catch (e) {
+            console.warn('Failed to create surface plane:', e);
+            return null;
+        }
+    }
+
+    function extractPlaneMetadata(matrix) {
+        try {
+            const mat = new THREE.Matrix4();
+            if (Array.isArray(matrix)) {
+                mat.fromArray(matrix);
+            } else {
+                mat.copy(matrix);
+            }
+
+            // Extract position (centroid)
+            const pos = new THREE.Vector3();
+            pos.setFromMatrixPosition(mat);
+
+            // Extract normal (Y axis of the matrix)
+            const normal = new THREE.Vector3(0, 1, 0);
+            normal.applyQuaternion(new THREE.Quaternion().setFromRotationMatrix(mat));
+
+            // Estimate plane bounds from scale (default to 1m x 1m if unavailable)
+            const scale = new THREE.Vector3();
+            mat.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
+            const width = Math.abs(scale.x) || 1.0;
+            const height = Math.abs(scale.z) || 1.0;
+
+            // Compute plane hash: discretized position + normal
+            const posHash = `p_${Math.round(pos.x * 10)}_${Math.round(pos.y * 10)}_${Math.round(pos.z * 10)}`;
+            const normHash = `n_${Math.round(normal.x * 100)}_${Math.round(normal.y * 100)}_${Math.round(normal.z * 100)}`;
+            const sizeHash = `s_${Math.round(width * 10)}_${Math.round(height * 10)}`;
+            const planeHash = `${posHash}|${normHash}|${sizeHash}`;
+
+            return {
+                position: { x: pos.x, y: pos.y, z: pos.z },
+                normal: { x: normal.x, y: normal.y, z: normal.z },
+                width: width,
+                height: height,
+                hash: planeHash
+            };
+        } catch (e) {
+            console.warn('Failed to extract plane metadata:', e);
+            return null;
+        }
+    }
+
+    function computePlaneDistance(meta1, meta2) {
+        if (!meta1 || !meta2) return Infinity;
+        
+        // Distance between centroids (LESS important now - position can vary)
+        const dx = (meta1.position.x - meta2.position.x);
+        const dy = (meta1.position.y - meta2.position.y);
+        const dz = (meta1.position.z - meta2.position.z);
+        const posDistance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+        // Angle between normals (MORE important - defines surface orientation)
+        const n1 = meta1.normal;
+        const n2 = meta2.normal;
+        const dotProduct = n1.x*n2.x + n1.y*n2.y + n1.z*n2.z;
+        const angleRad = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
+        const angleDeg = angleRad * (180 / Math.PI);
+
+        // Size difference (MORE important - defines surface scale)
+        const wDiff = Math.abs(meta1.width - meta2.width);
+        const hDiff = Math.abs(meta1.height - meta2.height);
+        const sizeDiff = wDiff + hDiff;
+
+        // Heavily favor surface geometry (normal + size) over position
+        // position weight reduced from 2 to 0.3, geometry weights increased
+        return posDistance * 0.3 + angleDeg * 1.5 + sizeDiff * 1.2;
+    }
+
+    function findMatchingPlane(dropMeta, currentMeta) {
+        // Exact hash match = very high confidence (surface is identical)
+        if (dropMeta.hash === currentMeta.hash) {
+            return { confidence: 0.99, distance: 0 };
+        }
+
+        // Fuzzy match based on distance
+        const distance = computePlaneDistance(dropMeta, currentMeta);
+        
+        // More generous thresholds to rely heavily on plane matching
+        let confidence = 0;
+        if (distance < 0.05) confidence = 0.95;     // Nearly identical surface
+        else if (distance < 0.2) confidence = 0.88;  // Very similar surface
+        else if (distance < 0.5) confidence = 0.75;  // Similar surface (was 0.7)
+        else if (distance < 1.0) confidence = 0.6;   // Moderately similar (was 0.5)
+        else if (distance < 2.0) confidence = 0.4;   // Weakly similar (was 0.3)
+        else if (distance < 3.0) confidence = 0.25;  // Distant but possibly same type
+        
+        return { confidence, distance };
+    }
+
+    function createConfidenceBadge(planeMetadata, confidence) {
+        try {
+            // Create a canvas texture for the confidence label
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+
+            // Transparent background
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw header
+            ctx.fillStyle = 'rgba(0, 200, 255, 0.9)';
+            ctx.font = 'bold 32px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('Surface', canvas.width / 2, canvas.height / 2 - 30);
+
+            // Draw confidence percentage if available
+            if (confidence !== null && confidence !== undefined) {
+                ctx.fillStyle = 'rgba(255, 255, 100, 1)';
+                ctx.font = 'bold 56px Arial';
+                ctx.fillText(confidence + '%', canvas.width / 2, canvas.height / 2 + 15);
+            } else {
+                ctx.fillStyle = 'rgba(255, 255, 100, 1)';
+                ctx.font = 'bold 48px Arial';
+                ctx.fillText('Match', canvas.width / 2, canvas.height / 2 + 15);
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const geom = new THREE.PlaneGeometry(0.5, 0.25);
+            const mat = new THREE.MeshBasicMaterial({
+                map: texture,
+                transparent: true,
+                side: THREE.DoubleSide
+            });
+            const badge = new THREE.Mesh(geom, mat);
+            badge.userData.isBadge = true;
+
+            // Position badge above the object
+            badge.position.y = 0.3;
+
+            // Always face camera (will be updated in render loop if needed)
+            badge.userData.lookAtCamera = true;
+
+            return badge;
+        } catch (e) {
+            console.warn('Failed to create confidence badge:', e);
+            return null;
+        }
+    }
+
+    function toggleSurfacePlanes() {
+        showSurfacePlanes = !showSurfacePlanes;
+        updateSurfacePlanesVisibility();
+        const btn = document.getElementById('toggle-planes');
+        btn.textContent = showSurfacePlanes ? 'Hide Surfaces' : 'Show Surfaces';
+    }
+
+    function updateSurfacePlanesVisibility() {
+        droppedObjects.forEach(drop => {
+            if (drop.mesh) {
+                drop.mesh.traverse(child => {
+                    if (child.userData && child.userData.isSurfacePlane) {
+                        child.visible = showSurfacePlanes;
+                    }
+                });
+            }
+        });
     }
 
 </script>
