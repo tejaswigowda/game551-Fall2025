@@ -486,18 +486,25 @@ var doLogout = function()
 
     function initGeolocation() {
         if (!('geolocation' in navigator)) return;
-        navigator.geolocation.getCurrentPosition(
+        
+        // Continuously watch position for latest GPS data
+        const watchId = navigator.geolocation.watchPosition(
             (pos) => {
                 const { latitude, longitude, altitude } = pos.coords;
                 geoOrigin = { lat: latitude, lon: longitude, alt: altitude || 0 };
                 hasGeo = true;
                 updateHUD();
+                console.log('GPS updated:', latitude.toFixed(6), longitude.toFixed(6));
             },
             (err) => {
                 console.warn('Geolocation error:', err);
                 updateHUD();
             },
-            { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+            { 
+                enableHighAccuracy: true, 
+                maximumAge: 0,  // Always get fresh position
+                timeout: 10000 
+            }
         );
 
         // Update HUD every second for heading changes

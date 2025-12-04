@@ -71,6 +71,7 @@ app.post("/api/dropObject", isLoggedIn, function(req,res){
       quaternion: payload.quaternion,
       hitTestMatrix: payload.hitTestMatrix,
       planeMetadata: payload.planeMetadata,
+      cameraSnapshot: payload.cameraSnapshot,
       timestamp: payload.timestamp || Date.now(),
       createdAt: new Date(payload.timestamp || Date.now())
     };
