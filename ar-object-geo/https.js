@@ -3,9 +3,9 @@ require('greenlock-express').create({
   version: 'draft-11'
 , server: 'https://acme-v02.api.letsencrypt.org/directory'
 //, server: 'https://acme-staging-v02.api.letsencrypt.org/directory'  // staging
-, email: ''                                     // CHANGE THIS
+, email: 'tejaswi@asu.edu'                                     // CHANGE THIS
 , agreeTos: true
-, approveDomains: [ 'example.com', 'www.example.com' ]              // CHANGE THIS
+, approveDomains: [ 'game551.httpsexample.xyz', 'www.game551.httpsexample.xyz' ]              // CHANGE THIS
 , store: require('greenlock-store-fs')
 , configDir: homeDir
 //, app: require('express')().use('/', function (req, res) {
