@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WebXR hit test</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #999999;
+        }
+
+        code {
+            font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
+                monospace;
+        }
+
+        #canvas {
+            width: 100%;
+            height: 85vh;
+        }
+
+        .navbar {
+            background-color: #333;
+            overflow-y: hidden;
+            overflow-x: scroll;
+            white-space: nowrap;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            height: 15vh;
+        }
+
+        .navbar .button-image {
+            display: inline-block;
+            text-align: center;
+            padding: 1em 0.5em;
+            width: 100px;
+            height: 100px;
+        }
+
+        .clicked {
+            border: 2px;
+            color: white;
+            border-style: solid;
+        }
+
+        #ARButton {
+            bottom: 20%;
+            background-color: rgba(20, 20, 20, 0.8)!important;
+        }
+
+        #geo-hud {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-family: monospace;
+            z-index: 9998;
+            max-width: 300px;
+        }
+
+        #geo-hud .status-line {
+            margin: 3px 0;
+        }
+
+        #geo-hud .label {
+            color: #aaa;
+            display: inline-block;
+            width: 80px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <div id="geo-hud">
+        <div class="status-line"><span class="label">GPS:</span><span id="hud-gps">—</span></div>
+        <div class="status-line"><span class="label">Heading:</span><span id="hud-heading">—</span></div>
+        <div class="status-line"><span class="label">Last Drop:</span><span id="hud-last">—</span></div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+    <div class="navbar">
+        <img class="button-image" id="item0" src="pngs/armchair.png" />
+        <img class="button-image" id="item1" src="pngs/lounger.png" />
+        <img class="button-image" id="item2" src="pngs/marble-coffeetable.png" />
+        <img class="button-image" id="item3" src="pngs/walnut-coffeetable.png" />
+        <img class="button-image" id="item4" src="pngs/chair-with-gold.png" />
+        <img class="button-image" id="item5" src="pngs/nesting-tables.png" />
+    </div>
+</body>
+<script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/three.module.js';
+    import { ARButton } from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/ARButton.js';
+    import { GLTFLoader } from "https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/GLTFLoader.js";
+    import { XREstimatedLight } from "https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/XREstimatedLight.js";
+
+    let reticle;
+    let hitTestSource = null;
+    let hitTestSourceRequested = false;
+
+    let scene, camera, renderer;
+
+    // Geo reference state
+    let geoOrigin = null; // {lat, lon, alt}
+    let headingDeg = null; // degrees clockwise from North
+    let hasGeo = false;
+
+    let models = [
+        "./glbs/dylan_armchair_yolk_yellow.glb",
+        "./glbs/ivan_armchair_mineral_blue.glb",
+        "./glbs/marble_coffee_table.glb",
+        "./glbs/flippa_functional_coffee_table_w._storagewalnut.glb",
+        "./glbs/frame_armchairpetrol_velvet_with_gold_frame.glb",
+        "./glbs/elnaz_nesting_side_tables_brass__green_marble.glb",
+    ];
+    let modelScaleFactor = [0.01, 0.01, 0.005, 0.01, 0.01, 0.01];
+    let items = [];
+    let itemSelectedIndex = 0;
+
+    let controller;
+
+    init();
+    setupFurnitureSelection();
+    animate();
+
+    function init() {
+        let myCanvas = document.getElementById("canvas");
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(
+            70,
+            myCanvas.innerWidth / myCanvas.innerHeight,
+            0.01,
+            20
+        );
+
+        const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+        light.position.set(0.5, 1, 0.25);
+        scene.add(light);
+
+        renderer = new THREE.WebGLRenderer({
+            canvas: myCanvas,
+            antialias: true,
+            alpha: true,
+        });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(myCanvas.innerWidth, myCanvas.innerHeight);
+        renderer.xr.enabled = true;
+
+        // Don't add the XREstimatedLight to the scene initially
+        // It doesn't have any estimated lighting values until an AR session starts
+        const xrLight = new XREstimatedLight(renderer);
+        xrLight.addEventListener("estimationstart", () => {
+            // Swap the default light out for the estimated one so we start getting some estimated values.
+            scene.add(xrLight);
+            scene.remove(light);
+            // The estimated lighting also provides an env cubemap which we apply here
+            if (xrLight.environment) {
+                scene.environment = xrLight.environment;
+            }
+        });
+
+        xrLight.addEventListener("estimationend", () => {
+            // Swap the lights back when we stop receiving estimated values
+            scene.add(light);
+            scene.remove(xrLight);
+
+            // Revert back to the default environment
+            // scene.environment =
+        });
+
+        let arButton = ARButton.createButton(renderer, {
+            requiredFeatures: ["hit-test"],
+            optionalFeatures: ["dom-overlay", "light-estimation"],
+            domOverlay: { root: document.body },
+        });
+        arButton.style.bottom = "20%";
+        document.body.appendChild(arButton);
+
+        for (let i = 0; i < models.length; i++) {
+            const loader = new GLTFLoader();
+            loader.load(models[i], function (glb) {
+                let model = glb.scene;
+                items[i] = model;
+            });
+        }
+
+        controller = renderer.xr.getController(0);
+        controller.addEventListener("select", onSelect);
+        scene.add(controller);
+
+        reticle = new THREE.Mesh(
+            new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
+            new THREE.MeshBasicMaterial()
+        );
+        reticle.matrixAutoUpdate = false;
+        reticle.visible = false;
+        scene.add(reticle);
+
+        // Capture GPS and heading upfront
+        initGeolocation();
+    }
+
+    function onSelect() {
+        if (reticle.visible) {
+            let newModel = items[itemSelectedIndex].clone();
+            newModel.visible = true;
+            // this one will set the position but not the rotation
+            // newModel.position.setFromMatrixPosition(reticle.matrix);
+
+            // this will set the position and the rotation to face you
+            reticle.matrix.decompose(
+                newModel.position,
+                newModel.quaternion,
+                newModel.scale
+            );
+            let scaleFactor = modelScaleFactor[itemSelectedIndex];
+            newModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
+
+            scene.add(newModel);
+
+            // Report approximate GPS for dropped object
+            const worldPos = newModel.position.clone();
+            const approxGeo = localToLatLon(worldPos);
+            if (approxGeo) {
+                console.log('Dropped object approximate GPS:', approxGeo);
+                const coords = `${approxGeo.lat.toFixed(6)}, ${approxGeo.lon.toFixed(6)}`;
+                showToast(`Lat: ${approxGeo.lat.toFixed(6)}, Lon: ${approxGeo.lon.toFixed(6)}`);
+                
+                // Update HUD
+                const hudLast = document.getElementById('hud-last');
+                if (hudLast) hudLast.textContent = coords;
+                
+                // Persist to backend
+                persistCoordinates({
+                    modelIndex: itemSelectedIndex,
+                    lat: approxGeo.lat,
+                    lon: approxGeo.lon,
+                    alt: approxGeo.alt,
+                    localPos: { x: worldPos.x, y: worldPos.y, z: worldPos.z },
+                    timestamp: Date.now()
+                });
+            } else {
+                showToast('GPS not available; showing local placement only');
+            }
+        }
+    }
+
+    const onClicked = (e, selectItem, index) => {
+        itemSelectedIndex = index;
+
+        // remove image selection from others to indicate unclicked
+        for (let i = 0; i < models.length; i++) {
+            const el = document.querySelector(`#item` + i);
+            el.classList.remove("clicked");
+        }
+        // set image to selected
+        e.target.classList.add("clicked");
+    };
+
+    function setupFurnitureSelection() {
+        for (let i = 0; i < models.length; i++) {
+            const el = document.querySelector(`#item` + i);
+            el.addEventListener("beforexrselect", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            el.addEventListener("click", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onClicked(e, items[i], i);
+            });
+        }
+    }
+
+    function animate() {
+        renderer.setAnimationLoop(render);
+    }
+
+    function render(timestamp, frame) {
+        if (frame) {
+            const referenceSpace = renderer.xr.getReferenceSpace();
+            const session = renderer.xr.getSession();
+
+            if (hitTestSourceRequested === false) {
+                session.requestReferenceSpace("viewer").then(function (referenceSpace) {
+                    session
+                        .requestHitTestSource({ space: referenceSpace })
+                        .then(function (source) {
+                            hitTestSource = source;
+                        });
+                });
+
+                session.addEventListener("end", onSessionEnded);
+
+                hitTestSourceRequested = true;
+            }
+
+            if (hitTestSource) {
+                const hitTestResults = frame.getHitTestResults(hitTestSource);
+
+                if (hitTestResults.length) {
+                    const hit = hitTestResults[0];
+
+                    reticle.visible = true;
+                    reticle.matrix.fromArray(
+                        hit.getPose(referenceSpace).transform.matrix
+                    );
+                } else {
+                    reticle.visible = false;
+                }
+            }
+        }
+
+        renderer.render(scene, camera);
+    }
+
+    function onSessionEnded() {
+        window.location.reload();
+    }
+
+    function initGeolocation() {
+        if (!('geolocation' in navigator)) return;
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const { latitude, longitude, altitude } = pos.coords;
+                geoOrigin = { lat: latitude, lon: longitude, alt: altitude || 0 };
+                hasGeo = true;
+                updateHUD();
+            },
+            (err) => {
+                console.warn('Geolocation error:', err);
+                updateHUD();
+            },
+            { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+        );
+
+        // Update HUD every second for heading changes
+        setInterval(updateHUD, 1000);
+
+        // Try to get heading via deviceorientation (may require permission)
+        const requestPerm = window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function';
+        const attachListener = () => {
+            window.addEventListener('deviceorientationabsolute', (e) => {
+                if (e.absolute && e.alpha != null) headingDeg = e.alpha;
+            });
+            window.addEventListener('deviceorientation', (e) => {
+                if (headingDeg == null && e.alpha != null) headingDeg = e.alpha;
+            });
+        };
+        if (requestPerm) {
+            DeviceOrientationEvent.requestPermission().then((res) => {
+                if (res === 'granted') attachListener();
+                else attachListener();
+            }).catch(() => attachListener());
+        } else {
+            attachListener();
+        }
+    }
+
+    // Convert local XR meters (X ~ East, Z ~ North) to lat/lon around geoOrigin
+    function localToLatLon(localPos) {
+        if (!hasGeo || !geoOrigin) return null;
+        const R = 6378137; // WGS84 Earth radius (m)
+        const lat0 = geoOrigin.lat * Math.PI / 180.0;
+        const cosLat0 = Math.cos(lat0);
+
+        // If your scene uses -Z forward, you may want: let north = -localPos.z;
+        let east = localPos.x;
+        let north = localPos.z;
+
+        if (typeof headingDeg === 'number') {
+            const h = headingDeg * Math.PI / 180.0;
+            const cosH = Math.cos(h);
+            const sinH = Math.sin(h);
+            const e = east, n = north;
+            east =  e * cosH - n * sinH;
+            north = e * sinH + n * cosH;
+        }
+
+        const dLat = north / R;
+        const dLon = east / (R * cosLat0);
+        const lat = geoOrigin.lat + (dLat * 180.0 / Math.PI);
+        const lon = geoOrigin.lon + (dLon * 180.0 / Math.PI);
+        const alt = (geoOrigin.alt || 0) + (localPos.y || 0);
+        return { lat, lon, alt };
+    }
+
+    function showToast(msg) {
+        let el = document.getElementById('geo-toast');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'geo-toast';
+            el.style.position = 'fixed';
+            el.style.top = '10px';
+            el.style.left = '50%';
+            el.style.transform = 'translateX(-50%)';
+            el.style.background = 'rgba(20,20,20,0.8)';
+            el.style.color = 'white';
+            el.style.padding = '8px 12px';
+            el.style.borderRadius = '6px';
+            el.style.zIndex = '9999';
+            document.body.appendChild(el);
+        }
+        el.textContent = msg;
+        el.style.display = 'block';
+        clearTimeout(el._t);
+        el._t = setTimeout(() => { el.style.display = 'none'; }, 3000);
+    }
+
+    function updateHUD() {
+        const hudGps = document.getElementById('hud-gps');
+        const hudHeading = document.getElementById('hud-heading');
+        
+        if (hudGps) {
+            if (hasGeo && geoOrigin) {
+                hudGps.textContent = `${geoOrigin.lat.toFixed(6)}, ${geoOrigin.lon.toFixed(6)}`;
+            } else {
+                hudGps.textContent = 'acquiring...';
+            }
+        }
+        
+        if (hudHeading) {
+            if (typeof headingDeg === 'number') {
+                hudHeading.textContent = `${headingDeg.toFixed(1)}°`;
+            } else {
+                hudHeading.textContent = 'unavailable';
+            }
+        }
+    }
+
+    function persistCoordinates(data) {
+        // Send coordinates to backend endpoint
+        fetch('/api/dropObject', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        })
+        .then(res => res.json())
+        .then(result => console.log('Persisted:', result))
+        .catch(err => console.warn('Persist failed:', err));
+    }
+
+</script>
+
+</html>
