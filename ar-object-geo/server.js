@@ -56,7 +56,7 @@ app.get("/api/dropObject"/*, isLoggedIn*/, function(req,res){
     });
 })
 
-app.post("/api/dropObject"/*, isLoggedIn*/, function(req,res){
+app.post("/api/dropObject", isLoggedIn, function(req,res){
   try{
     var payload = req.body || {};
     var doc = {

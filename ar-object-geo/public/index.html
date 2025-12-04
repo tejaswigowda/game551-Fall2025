@@ -90,9 +90,31 @@
             background: rgba(0, 136, 255, 1);
         }
     </style>
+    <script>
+var main = function(){
+  // check whether user is logged in
+  loadFile("/loginStatus", function(data){
+    if(data === "0"){
+      window.location.href='./login.html'
+      return;
+    }
+    else{
+      document.getElementById("accountInfo").innerHTML = data;
+    }
+  });               
+}
+
+var doLogout = function()
+{
+  var x = confirm("Logout now?")
+  if(x){
+    loadFile("./logout", function(d){window.location.reload()})
+  }
+}
+</script>
 </head>
 
-<body>
+<body onload="main()">
     <div id="root"></div>
 
     <div id="geo-hud">
