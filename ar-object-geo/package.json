@@ -9,7 +9,7 @@
     "greenlock-express": "^2.7.18",
     "method-override": "^3.0.0",
     "mongodb": "2.2",
-    "mongoose": "2.2",
+    "mongoose": "^4.13.21",
     "mongoskin": "^2.1.0",
     "passport": "^0.7.0",
     "passport-local": "^1.0.0"
