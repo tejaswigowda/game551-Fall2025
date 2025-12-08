@@ -41,10 +41,84 @@
     }).addTo(map);
 
     let markers = [];
+    let currentPositionMarker = null;
+    let currentHeading = 0;
+
+    // Custom icon for current position with directional arrow
+    function createDirectionalIcon(heading) {
+      const svg = `
+        <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <g transform="rotate(${heading} 16 16)">
+            <circle cx="16" cy="16" r="10" fill="#0088ff" stroke="#fff" stroke-width="3"/>
+            <path d="M16 6 L20 14 L16 12 L12 14 Z" fill="#fff"/>
+          </g>
+        </svg>
+      `;
+      const base64 = btoa(svg);
+      return L.icon({
+        iconUrl: 'data:image/svg+xml;base64,' + base64,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+      });
+    }
+
+    function updateCurrentPosition() {
+      if (!('geolocation' in navigator)) return;
+      
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude, heading } = pos.coords;
+          
+          // Update heading if available, otherwise keep current
+          if (heading !== null && heading !== undefined) {
+            currentHeading = heading;
+          }
+          
+          const icon = createDirectionalIcon(currentHeading);
+          
+          if (currentPositionMarker) {
+            currentPositionMarker.setLatLng([latitude, longitude]);
+            currentPositionMarker.setIcon(icon);
+          } else {
+            currentPositionMarker = L.marker([latitude, longitude], {
+              icon: icon,
+              zIndexOffset: 1000
+            });
+            const headingText = currentHeading !== null ? `${Math.round(currentHeading)}°` : 'N/A';
+            currentPositionMarker.bindPopup(`Current Position<br>Heading: ${headingText}`);
+            currentPositionMarker.addTo(map);
+          }
+        },
+        (err) => console.warn('Geolocation error:', err),
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+      );
+    }
+    
+    // Listen for device orientation if geolocation heading not available
+    if (window.DeviceOrientationEvent) {
+      window.addEventListener('deviceorientation', (event) => {
+        if (event.alpha !== null) {
+          // alpha is compass heading on mobile devices
+          const heading = event.webkitCompassHeading || (360 - event.alpha);
+          currentHeading = heading;
+          
+          // Update marker icon if it exists
+          if (currentPositionMarker) {
+            const icon = createDirectionalIcon(currentHeading);
+            currentPositionMarker.setIcon(icon);
+            const headingText = `${Math.round(currentHeading)}°`;
+            currentPositionMarker.setPopupContent(`Current Position<br>Heading: ${headingText}`);
+          }
+        }
+      });
+    }
 
     function fitMapToMarkers() {
       const group = new L.FeatureGroup(markers);
-      if (markers.length > 0) {
+      if (currentPositionMarker) {
+        group.addLayer(currentPositionMarker);
+      }
+      if (markers.length > 0 || currentPositionMarker) {
         map.fitBounds(group.getBounds().pad(0.2));
       } else {
         map.setView([0,0], 2);
@@ -106,8 +180,11 @@
     document.getElementById('refresh').addEventListener('click', fetchDrops);
     document.getElementById('fit').addEventListener('click', fitMapToMarkers);
 
+    // Initialize
+    updateCurrentPosition();
     fetchDrops();
     setInterval(fetchDrops, 10000);
+    setInterval(updateCurrentPosition, 5000); // Update position every 5 seconds
   </script>
 </body>
 </html>

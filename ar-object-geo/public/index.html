@@ -89,6 +89,48 @@
         #toggle-planes:active {
             background: rgba(0, 136, 255, 1);
         }
+
+        #viz-iframe-container {
+            position: fixed;
+            bottom: 15vh;
+            right: 10px;
+            width: 300px;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid rgba(0, 136, 255, 0.6);
+            border-radius: 8px;
+            z-index: 9997;
+            overflow: hidden;
+            display: none;
+        }
+
+        #viz-iframe-container.visible {
+            display: block;
+        }
+
+        #viz-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        #toggle-viz {
+            position: fixed;
+            bottom: calc(15vh + 210px);
+            right: 10px;
+            padding: 8px 12px;
+            background: rgba(0, 136, 255, 0.6);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            z-index: 9998;
+        }
+
+        #toggle-viz:active {
+            background: rgba(0, 136, 255, 1);
+        }
     </style>
     <script src="asyncReq.js"></script>
     <script>
@@ -123,6 +165,11 @@ var doLogout = function()
         <div class="status-line"><span class="label">Heading:</span><span id="hud-heading">—</span></div>
         <div class="status-line"><span class="label">Last Drop:</span><span id="hud-last">—</span></div>
         <button id="toggle-planes">Show Surfaces</button>
+    </div>
+
+    <button id="toggle-viz">Map</button>
+    <div id="viz-iframe-container">
+        <iframe id="viz-iframe" src="viz.html"></iframe>
     </div>
 
     <canvas id="canvas"></canvas>
@@ -264,6 +311,9 @@ var doLogout = function()
 
         // Setup surface plane toggle
         document.getElementById('toggle-planes').addEventListener('click', toggleSurfacePlanes);
+        
+        // Setup viz iframe toggle
+        document.getElementById('toggle-viz').addEventListener('click', toggleVizIframe);
     }
 
     function onSelect() {
@@ -271,17 +321,27 @@ var doLogout = function()
             // Capture the hit test surface matrix
             lastReticleMatrix = reticle.matrix.clone();
 
+            // Extract surface normal to check if it's roughly horizontal (floor)
+            const surfaceNormal = new THREE.Vector3(0, 1, 0);
+            surfaceNormal.applyQuaternion(new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().fromArray(Array.from(lastReticleMatrix.elements))));
+            
+            // Only allow drops on horizontal surfaces (floor) - normal.y > 0.7 means mostly pointing up
+            if (surfaceNormal.y < 0.7) {
+                showToast('Can only drop on floor surfaces');
+                return;
+            }
+
             let newModel = items[itemSelectedIndex].clone();
             newModel.visible = true;
-            // this one will set the position but not the rotation
-            // newModel.position.setFromMatrixPosition(reticle.matrix);
-
-            // this will set the position and the rotation to face you
+            
+            // Force placement on ground level (y=-1.5, typical phone eye height)
             reticle.matrix.decompose(
                 newModel.position,
                 newModel.quaternion,
                 newModel.scale
             );
+            newModel.position.y = -1.5; // Force to ground level below camera
+            
             let scaleFactor = modelScaleFactor[itemSelectedIndex];
             newModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
@@ -299,17 +359,21 @@ var doLogout = function()
                 const hudLast = document.getElementById('hud-last');
                 if (hudLast) hudLast.textContent = coords;
                 
+                // Capture fresh camera snapshot for this drop
+                const dropSnapshot = captureCanvasSnapshot();
+                console.log('Camera snapshot captured:', dropSnapshot ? 'YES' : 'NO');
+                
                 // Persist to backend with surface data
                 persistCoordinates({
                     modelIndex: itemSelectedIndex,
                     lat: approxGeo.lat,
                     lon: approxGeo.lon,
                     alt: approxGeo.alt,
-                    localPos: { x: worldPos.x, y: worldPos.y, z: worldPos.z },
+                    localPos: { x: worldPos.x, y: -1.5, z: worldPos.z },
                     quaternion: { x: newModel.quaternion.x, y: newModel.quaternion.y, z: newModel.quaternion.z, w: newModel.quaternion.w },
                     hitTestMatrix: Array.from(lastReticleMatrix.elements),
                     planeMetadata: extractPlaneMetadata(lastReticleMatrix),
-                    cameraSnapshot: currentCameraSnapshot,
+                    cameraSnapshot: dropSnapshot,
                     timestamp: Date.now()
                 });
             } else {
@@ -660,22 +724,36 @@ var doLogout = function()
                 }
             }
 
-            // Compute place recognition confidence if snapshots available
-            let placeRecognitionConfidence = 0;
-            if (placeRecognitionEnabled && item.cameraSnapshot && currentCameraSnapshot) {
-                Promise.all([
-                    computeImageHash(item.cameraSnapshot),
-                    computeImageHash(currentCameraSnapshot)
-                ]).then(([storedHash, currentHash]) => {
-                    placeRecognitionConfidence = computePlaceRecognitionConfidence(storedHash, currentHash);
-                    if (placeRecognitionConfidence > 0.4) {
-                        console.log(`Place recognition match for ${dropId}: ${Math.round(placeRecognitionConfidence * 100)}%`);
+            // Compute place recognition confidence if snapshots available (async)
+            const processPlaceRecognition = async () => {
+                let placeRecognitionConfidence = 0;
+                if (placeRecognitionEnabled && item.cameraSnapshot && currentCameraSnapshot) {
+                    try {
+                        const [storedHash, currentHash] = await Promise.all([
+                            computeImageHash(item.cameraSnapshot),
+                            computeImageHash(currentCameraSnapshot)
+                        ]);
+                        placeRecognitionConfidence = computePlaceRecognitionConfidence(storedHash, currentHash);
+                        const placeConfidencePct = Math.round(placeRecognitionConfidence * 100);
+                        
+                        if (placeRecognitionConfidence > 0.4) {
+                            console.log(`✓ Place recognition match for ${dropId}: ${placeConfidencePct}%`);
+                            
+                            // Update stored confidence and badge
+                            const drop = droppedObjects.get(dropId);
+                            if (drop && drop.mesh) {
+                                drop.placeRecognitionConfidence = placeRecognitionConfidence;
+                                updateDropBadge(drop.mesh, matchConfidence, placeConfidencePct);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Place recognition failed:', e);
                     }
-                }).catch(e => console.warn('Place recognition failed:', e));
-            }
+                }
+            };
 
             // Create and add new drop
-            const marker = createDropMarker(item, matchConfidence);
+            const marker = createDropMarker(item, matchConfidence, null);
             if (marker) {
                 scene.add(marker);
                 droppedObjects.set(dropId, {
@@ -685,13 +763,16 @@ var doLogout = function()
                     alt: item.alt,
                     mesh: marker,
                     matchConfidence: matchConfidence,
-                    placeRecognitionConfidence: placeRecognitionConfidence
+                    placeRecognitionConfidence: 0
                 });
+                
+                // Process place recognition asynchronously
+                processPlaceRecognition();
             }
         });
     }
 
-    function createDropMarker(item, matchConfidence) {
+    function createDropMarker(item, matchConfidence, placeConfidence) {
         if (!hasGeo || !geoOrigin) return null;
 
         // Convert GPS back to local XR space
@@ -714,7 +795,7 @@ var doLogout = function()
             north = e * sinH + n * cosH;
         }
 
-        const y = (item.alt || 0) - (geoOrigin.alt || 0);
+        const y = -1.5; // Place below camera (most phones hold at ~1.5m eye height)
         const modelIdx = item.modelIndex || 0;
         let marker = null;
 
@@ -724,7 +805,7 @@ var doLogout = function()
             marker.visible = true;
             const scaleFactor = modelScaleFactor[modelIdx] || 0.01;
             marker.scale.set(scaleFactor, scaleFactor, scaleFactor);
-            marker.position.set(east, y, north);
+            marker.position.set(east, y, north); // y=-1.5 for ground level
             
             // Restore quaternion if available
             if (item.quaternion) {
@@ -744,7 +825,7 @@ var doLogout = function()
             
             // Add confidence badge if available
             if (item.planeMetadata) {
-                const badge = createConfidenceBadge(item.planeMetadata, matchConfidence);
+                const badge = createConfidenceBadge(item.planeMetadata, matchConfidence, placeConfidence);
                 if (badge) marker.add(badge);
             }
             
@@ -880,37 +961,47 @@ var doLogout = function()
         return { confidence, distance };
     }
 
-    function createConfidenceBadge(planeMetadata, confidence) {
+    function createConfidenceBadge(planeMetadata, planeConfidence, placeConfidence) {
         try {
             // Create a canvas texture for the confidence label
             const canvas = document.createElement('canvas');
             canvas.width = 256;
-            canvas.height = 128;
+            canvas.height = 160;
             const ctx = canvas.getContext('2d');
 
             // Transparent background
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw header
+            // Draw plane confidence
             ctx.fillStyle = 'rgba(0, 200, 255, 0.9)';
-            ctx.font = 'bold 32px Arial';
+            ctx.font = 'bold 24px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText('Surface', canvas.width / 2, canvas.height / 2 - 30);
-
-            // Draw confidence percentage if available
-            if (confidence !== null && confidence !== undefined) {
+            ctx.fillText('Surface', canvas.width / 2, 25);
+            
+            if (planeConfidence !== null && planeConfidence !== undefined) {
                 ctx.fillStyle = 'rgba(255, 255, 100, 1)';
-                ctx.font = 'bold 56px Arial';
-                ctx.fillText(confidence + '%', canvas.width / 2, canvas.height / 2 + 15);
+                ctx.font = 'bold 40px Arial';
+                ctx.fillText(planeConfidence + '%', canvas.width / 2, 60);
             } else {
                 ctx.fillStyle = 'rgba(255, 255, 100, 1)';
-                ctx.font = 'bold 48px Arial';
-                ctx.fillText('Match', canvas.width / 2, canvas.height / 2 + 15);
+                ctx.font = 'bold 32px Arial';
+                ctx.fillText('Match', canvas.width / 2, 60);
+            }
+
+            // Draw place recognition confidence if available
+            if (placeConfidence !== null && placeConfidence !== undefined && placeConfidence > 0) {
+                ctx.fillStyle = 'rgba(0, 255, 150, 0.9)';
+                ctx.font = 'bold 24px Arial';
+                ctx.fillText('Place', canvas.width / 2, 100);
+                
+                ctx.fillStyle = 'rgba(100, 255, 150, 1)';
+                ctx.font = 'bold 40px Arial';
+                ctx.fillText(placeConfidence + '%', canvas.width / 2, 135);
             }
 
             const texture = new THREE.CanvasTexture(canvas);
-            const geom = new THREE.PlaneGeometry(0.5, 0.25);
+            const geom = new THREE.PlaneGeometry(0.5, 0.32);
             const mat = new THREE.MeshBasicMaterial({
                 map: texture,
                 transparent: true,
@@ -947,6 +1038,38 @@ var doLogout = function()
                         child.visible = showSurfacePlanes;
                     }
                 });
+            }
+        });
+    }
+
+    function toggleVizIframe() {
+        const container = document.getElementById('viz-iframe-container');
+        const btn = document.getElementById('toggle-viz');
+        
+        if (container.classList.contains('visible')) {
+            container.classList.remove('visible');
+            btn.textContent = 'Map';
+        } else {
+            container.classList.add('visible');
+            btn.textContent = 'Hide Map';
+            // Reload iframe to refresh data
+            const iframe = document.getElementById('viz-iframe');
+            iframe.src = iframe.src;
+        }
+    }
+
+    function updateDropBadge(mesh, planeConfidence, placeConfidence) {
+        // Find and update the badge on this mesh
+        mesh.traverse(child => {
+            if (child.userData && child.userData.isBadge) {
+                // Recreate the badge with updated place confidence
+                const parent = child.parent;
+                parent.remove(child);
+                
+                const newBadge = createConfidenceBadge(null, planeConfidence, placeConfidence);
+                if (newBadge) {
+                    parent.add(newBadge);
+                }
             }
         });
     }
