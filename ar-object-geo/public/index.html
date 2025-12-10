@@ -47,7 +47,7 @@
         }
 
         #ARButton {
-            bottom: 20%;
+            bottom: calc(100vh - 60px);
             background-color: rgba(20, 20, 20, 0.8)!important;
         }
 
@@ -92,7 +92,7 @@
 
         #viz-iframe-container {
             position: fixed;
-            bottom: 15vh;
+            top: 60px;
             right: 10px;
             width: 300px;
             height: 200px;
@@ -116,7 +116,7 @@
 
         #toggle-viz {
             position: fixed;
-            bottom: calc(15vh + 210px);
+            top: 35px;
             right: 10px;
             padding: 8px 12px;
             background: rgba(0, 136, 255, 0.6);
@@ -130,6 +130,34 @@
 
         #toggle-viz:active {
             background: rgba(0, 136, 255, 1);
+        }
+
+        #drop-button {
+            position: fixed;
+            bottom: calc(15vh + 10px);
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            background: rgba(0, 200, 100, 0.9);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 9998;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            display: none;
+        }
+
+        #drop-button:active {
+            background: rgba(0, 255, 120, 1);
+            transform: translateX(-50%) scale(0.95);
+        }
+
+        #drop-button:disabled {
+            background: rgba(100, 100, 100, 0.5);
+            cursor: not-allowed;
         }
     </style>
     <script src="asyncReq.js"></script>
@@ -160,7 +188,7 @@ var doLogout = function()
 <body onload="main()">
     <div id="root"></div>
 
-    <div id="geo-hud">
+    <div id="geo-hud" style="display: none;">
         <div class="status-line"><span class="label">GPS:</span><span id="hud-gps">—</span></div>
         <div class="status-line"><span class="label">Heading:</span><span id="hud-heading">—</span></div>
         <div class="status-line"><span class="label">Last Drop:</span><span id="hud-last">—</span></div>
@@ -171,6 +199,8 @@ var doLogout = function()
     <div id="viz-iframe-container">
         <iframe id="viz-iframe" src="viz.html"></iframe>
     </div>
+
+    <button id="drop-button" disabled>Drop Pin</button>
 
     <canvas id="canvas"></canvas>
     <div class="navbar">
@@ -224,6 +254,7 @@ var doLogout = function()
     let modelCache = {}; // Cache loaded GLTF models by index
 
     let controller;
+    let dropButton; // UI button for dropping objects
 
     init();
     setupFurnitureSelection();
@@ -279,7 +310,9 @@ var doLogout = function()
             optionalFeatures: ["dom-overlay", "light-estimation"],
             domOverlay: { root: document.body },
         });
-        arButton.style.bottom = "20%";
+        arButton.style.bottom = "calc(100vh - 150px)";
+        arButton.style.left = "10px!important";
+        arButton.style.marginLeft = "0px";
         document.body.appendChild(arButton);
 
         for (let i = 0; i < models.length; i++) {
@@ -291,7 +324,6 @@ var doLogout = function()
         }
 
         controller = renderer.xr.getController(0);
-        controller.addEventListener("select", onSelect);
         scene.add(controller);
 
         reticle = new THREE.Mesh(
@@ -314,9 +346,13 @@ var doLogout = function()
         
         // Setup viz iframe toggle
         document.getElementById('toggle-viz').addEventListener('click', toggleVizIframe);
+        
+        // Setup drop button
+        dropButton = document.getElementById('drop-button');
+        dropButton.addEventListener('click', onDropButtonClick);
     }
 
-    function onSelect() {
+    function onDropButtonClick() {
         if (reticle.visible) {
             // Capture the hit test surface matrix
             lastReticleMatrix = reticle.matrix.clone();
@@ -379,6 +415,8 @@ var doLogout = function()
             } else {
                 showToast('GPS not available; showing local placement only');
             }
+        } else {
+            showToast('Point at a surface first');
         }
     }
 
@@ -499,6 +537,11 @@ var doLogout = function()
 
                 session.addEventListener("end", onSessionEnded);
 
+                // Show drop button when AR session starts
+                if (dropButton) {
+                    dropButton.style.display = 'block';
+                }
+
                 hitTestSourceRequested = true;
             }
 
@@ -512,8 +555,26 @@ var doLogout = function()
                     reticle.matrix.fromArray(
                         hit.getPose(referenceSpace).transform.matrix
                     );
+                    
+                    // Check if surface is floor (horizontal)
+                    const surfaceNormal = new THREE.Vector3(0, 1, 0);
+                    surfaceNormal.applyQuaternion(
+                        new THREE.Quaternion().setFromRotationMatrix(
+                            new THREE.Matrix4().fromArray(Array.from(reticle.matrix.elements))
+                        )
+                    );
+                    
+                    // Enable drop button only for floor surfaces (normal.y >= 0.7)
+                    if (dropButton) {
+                        dropButton.disabled = surfaceNormal.y < 0.7;
+                    }
                 } else {
                     reticle.visible = false;
+                    
+                    // Disable drop button when no surface detected
+                    if (dropButton) {
+                        dropButton.disabled = true;
+                    }
                 }
             }
         }
